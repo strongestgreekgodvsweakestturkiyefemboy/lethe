@@ -1,0 +1,51 @@
+---
+# roles/backend/tasks/main.yml
+
+- name: Install backend npm dependencies
+  community.general.npm:
+    path: "{{ lethe_root }}/backend"
+    state: present
+
+- name: Generate Prisma client
+  ansible.builtin.command: npx prisma generate
+  args:
+    chdir: "{{ lethe_root }}/backend"
+  environment:
+    DATABASE_URL: "postgresql://{{ postgres_user }}:{{ postgres_password }}@{{ postgres_host }}:{{ postgres_port }}/{{ postgres_db }}"
+  changed_when: false
+
+- name: Run Prisma database migrations
+  ansible.builtin.command: npx prisma migrate deploy
+  args:
+    chdir: "{{ lethe_root }}/backend"
+  environment:
+    DATABASE_URL: "postgresql://{{ postgres_user }}:{{ postgres_password }}@{{ postgres_host }}:{{ postgres_port }}/{{ postgres_db }}"
+  register: migrate_result
+  changed_when: "'No pending migrations' not in migrate_result.stdout"
+
+- name: Write backend .env file
+  ansible.builtin.template:
+    src: backend.env.j2
+    dest: "{{ lethe_root }}/backend/.env"
+    mode: '0600'
+
+- name: Build TypeScript backend
+  ansible.builtin.command: npx tsc
+  args:
+    chdir: "{{ lethe_root }}/backend"
+  changed_when: false
+
+- name: Start/restart backend with pm2
+  ansible.builtin.command: >
+    pm2 start dist/index.js
+    --name lethe-backend
+    --update-env
+    -f
+  args:
+    chdir: "{{ lethe_root }}/backend"
+  register: pm2_start
+  changed_when: true
+
+- name: Save pm2 process list
+  ansible.builtin.command: pm2 save
+  changed_when: false

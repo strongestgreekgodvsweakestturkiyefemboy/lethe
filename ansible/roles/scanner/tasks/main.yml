@@ -1,0 +1,36 @@
+---
+# roles/scanner/tasks/main.yml
+
+- name: Install scanner npm dependencies
+  community.general.npm:
+    path: "{{ lethe_root }}/scanner"
+    state: present
+
+- name: Write scanner .env file
+  ansible.builtin.template:
+    src: scanner.env.j2
+    dest: "{{ lethe_root }}/scanner/.env"
+    mode: '0600'
+
+- name: Build scanner TypeScript
+  ansible.builtin.command: npx tsc
+  args:
+    chdir: "{{ lethe_root }}/scanner"
+  changed_when: false
+
+- name: Run reconciliation scan (one-shot)
+  ansible.builtin.command: node dist/scan.js
+  args:
+    chdir: "{{ lethe_root }}/scanner"
+  environment:
+    DATABASE_URL: "postgresql://{{ postgres_user }}:{{ postgres_password }}@{{ postgres_host }}:{{ postgres_port }}/{{ postgres_db }}"
+    AWS_ACCESS_KEY_ID: "{{ minio_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ minio_secret_key }}"
+    AWS_ENDPOINT_URL: "http://{{ minio_host }}:{{ minio_port }}"
+    AWS_BUCKET_NAME: "{{ minio_bucket }}"
+  register: scan_output
+  changed_when: false
+
+- name: Show scan results
+  ansible.builtin.debug:
+    var: scan_output.stdout_lines

@@ -1,0 +1,68 @@
+# ansible/group_vars/all.yml.example
+# Copy this file to all.yml and fill in real values.
+# all.yml is git-ignored and must NEVER be committed.
+
+# ── Project paths ────────────────────────────────────────────
+lethe_root: "{{ ansible_env.HOME }}/lethe"
+
+# ── Service Hosts ────────────────────────────────────────────
+# Hostname or IP of each backing service.
+# When all services run on the same host, keep these as 127.0.0.1.
+# Set each one to the appropriate host/IP when services are distributed.
+postgres_host: "127.0.0.1"
+redis_host: "127.0.0.1"
+minio_host: "127.0.0.1"
+# Internal address of the backend, used by the importer worker for webhooks.
+backend_host: "127.0.0.1"
+
+# ── PostgreSQL ───────────────────────────────────────────────
+postgres_user: lethe
+postgres_password: "CHANGE_ME"
+postgres_db: lethe_db
+postgres_port: 5432
+
+# ── Redis ────────────────────────────────────────────────────
+redis_port: 6379
+# Address Redis binds to. Set to 0.0.0.0 (or a specific interface IP)
+# when Redis runs on its own host and must accept remote connections.
+redis_bind_address: "127.0.0.1"
+
+# ── MinIO ────────────────────────────────────────────────────
+minio_version: "RELEASE.2024-06-13T22-53-53Z"
+minio_access_key: "CHANGE_ME_ACCESS"
+minio_secret_key: "CHANGE_ME_SECRET"
+minio_port: 9000
+minio_console_port: 9001
+minio_bucket: lethe-imports
+
+# ── Host ─────────────────────────────────────────────────────
+# Public-facing IP address or hostname of this Lethe server.
+# Used by browser clients to reach the backend API.
+# Set this to the IP / FQDN that end-users (or peer nodes) connect to.
+lethe_host: "CHANGE_ME_SERVER_IP_OR_HOSTNAME"
+
+# ── Backend ──────────────────────────────────────────────────
+backend_port: 3001
+encryption_key: "CHANGE_ME_32_BYTES_EXACTLY______"   # must be exactly 32 UTF-8 bytes
+internal_webhook_secret: "CHANGE_ME_INTERNAL_SECRET"
+export_api_key: "CHANGE_ME_EXPORT_API_KEY"
+
+# ── Importer ─────────────────────────────────────────────────
+# Politeness delay (seconds) between individual post requests in the importer.
+# Increase to be more polite to scraped sites; decrease for faster imports.
+# Note: this may be moved to an admin panel in a future release.
+importer_post_delay_seconds: 2
+
+# ── Logging ──────────────────────────────────────────────────
+# Set to 'info' or 'warn' to reduce verbosity in production.
+log_level: "debug"
+
+# ── Node.js ──────────────────────────────────────────────────
+node_version: "20"
+
+# ── Python ───────────────────────────────────────────────────
+python_version: "python3"
+
+
+# ── Git Repository ───────────────────────────────────────────────────
+git_repo_url: "git@github.com:strongestgreekgodvsweakestturkiyefemboy/lethe.git"

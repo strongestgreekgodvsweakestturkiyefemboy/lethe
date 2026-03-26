@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum JobStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  FAILED_RATE_LIMIT
+}
+
+enum DataType {
+  TEXT
+  IMAGE
+  VIDEO
+  AUDIO
+}
+
+model User {
+  id        String     @id @default(cuid())
+  email     String     @unique
+  jobs      Job[]
+  dataItems DataItem[]
+  creators  Creator[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Job {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  targetSite   String
+  status       JobStatus @default(PENDING)
+  progressPct  Int       @default(0)
+  errorMessage String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model DataItem {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  sourceSite String
+  dataType   DataType
+  content    String?
+  fileUrl    String?
+  createdAt  DateTime @default(now())
+}
+
+model Creator {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  sourceSite  String
+  serviceType String
+  externalId  String
+  name        String?
+  posts       Post[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, sourceSite, serviceType, externalId])
+}
+
+model Post {
+  id          String          @id @default(cuid())
+  creatorId   String
+  creator     Creator         @relation(fields: [creatorId], references: [id])
+  externalId  String
+  title       String?
+  content     String?
+  publishedAt DateTime?
+  attachments PostAttachment[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([creatorId, externalId])
+}
+
+model PostAttachment {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id])
+  fileUrl   String
+  dataType  DataType
+  name      String?
+  createdAt DateTime @default(now())
+}
+
+model PostRevision {
+  id        String   @id @default(cuid())
+  postId    String
+  title     String?
+  content   String?
+  createdAt DateTime @default(now())
+}
+
+model Comment {
+  id          String    @id @default(cuid())
+  postId      String
+  externalId  String
+  authorName  String?
+  content     String
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([postId, externalId])
+}
+
+model CommentRevision {
+  id        String   @id @default(cuid())
+  commentId String
+  content   String
+  createdAt DateTime @default(now())
+}

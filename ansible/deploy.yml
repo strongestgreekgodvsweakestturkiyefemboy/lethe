@@ -1,0 +1,14 @@
+---
+# ansible/deploy.yml
+# Deploy/redeploy application code only.
+# Assumes Postgres, Redis, and MinIO are already running.
+# Run: ansible-playbook -i inventory/hosts.ini deploy.yml
+
+- name: Deploy Lethe application
+  hosts: lethe
+  gather_facts: true
+
+  roles:
+    - role: backend
+    - role: importers
+    - role: frontend

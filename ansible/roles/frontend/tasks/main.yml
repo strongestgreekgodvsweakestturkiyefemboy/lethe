@@ -1,0 +1,36 @@
+---
+# roles/frontend/tasks/main.yml
+
+- name: Install frontend npm dependencies
+  community.general.npm:
+    path: "{{ lethe_root }}/frontend"
+    state: present
+
+- name: Write frontend .env.local file
+  ansible.builtin.template:
+    src: frontend.env.local.j2
+    dest: "{{ lethe_root }}/frontend/.env.local"
+    mode: '0600'
+
+- name: Build Next.js frontend
+  ansible.builtin.command: npm run build
+  args:
+    chdir: "{{ lethe_root }}/frontend"
+  environment:
+    NEXT_PUBLIC_BACKEND_URL: "http://{{ lethe_host }}:{{ backend_port }}"
+  changed_when: false
+
+- name: Start/restart Next.js with pm2
+  ansible.builtin.command: >
+    pm2 start npm
+    --name lethe-frontend
+    -- start
+    --update-env
+  args:
+    chdir: "{{ lethe_root }}/frontend"
+  register: pm2_frontend
+  changed_when: true
+
+- name: Save pm2 process list
+  ansible.builtin.command: pm2 save
+  changed_when: false

@@ -1,0 +1,101 @@
+---
+# ansible/test.yml
+# Health-check playbook — verifies every service is responsive.
+# Run: ansible-playbook -i inventory/hosts.ini test.yml
+
+- name: Health-check Lethe services
+  hosts: lethe
+  gather_facts: false
+
+  vars:
+    backend_url: "http://{{ backend_host }}:{{ backend_port }}"
+
+  tasks:
+    # ── PostgreSQL ─────────────────────────────────────────────
+    - name: Check PostgreSQL is accepting connections
+      community.postgresql.postgresql_ping:
+        db: "{{ postgres_db }}"
+        login_host: "{{ postgres_host }}"
+        login_port: "{{ postgres_port }}"
+        login_user: "{{ postgres_user }}"
+        login_password: "{{ postgres_password }}"
+      register: pg_ping
+
+    - name: Assert PostgreSQL is up
+      ansible.builtin.assert:
+        that: pg_ping.is_available
+        fail_msg: "PostgreSQL is NOT reachable."
+        success_msg: "PostgreSQL ✓"
+
+    # ── Redis ──────────────────────────────────────────────────
+    - name: Check Redis responds to PING
+      ansible.builtin.command: redis-cli -h {{ redis_host }} -p {{ redis_port }} ping
+      register: redis_ping
+      changed_when: false
+
+    - name: Assert Redis PONG
+      ansible.builtin.assert:
+        that: "'PONG' in redis_ping.stdout"
+        fail_msg: "Redis is NOT responding."
+        success_msg: "Redis ✓"
+
+    # ── MinIO ──────────────────────────────────────────────────
+    - name: Check MinIO API port is open
+      ansible.builtin.wait_for:
+        host: "{{ minio_host }}"
+        port: "{{ minio_port }}"
+        timeout: 5
+        state: started
+      register: minio_check
+
+    - name: Show MinIO status
+      ansible.builtin.debug:
+        msg: "MinIO ✓ (port {{ minio_port }} is open)"
+
+    # ── Backend /healthz ───────────────────────────────────────
+    - name: Hit backend /healthz endpoint
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/healthz"
+        method: GET
+        status_code: 200
+        timeout: 10
+      register: healthz
+
+    - name: Assert backend health response
+      ansible.builtin.assert:
+        that: healthz.json.status == 'ok'
+        fail_msg: "Backend /healthz returned unexpected response."
+        success_msg: "Backend ✓ (/healthz returned ok)"
+
+    # ── pm2 process list ───────────────────────────────────────
+    - name: List pm2 processes
+      ansible.builtin.command: pm2 list
+      register: pm2_list
+      changed_when: false
+
+    - name: Show pm2 processes
+      ansible.builtin.debug:
+        var: pm2_list.stdout_lines
+
+    - name: Assert lethe-backend is online
+      ansible.builtin.assert:
+        that: "'lethe-backend' in pm2_list.stdout"
+        fail_msg: "lethe-backend is not running in pm2."
+        success_msg: "lethe-backend pm2 process ✓"
+
+    - name: Assert lethe-importer is online
+      ansible.builtin.assert:
+        that: "'lethe-importer' in pm2_list.stdout"
+        fail_msg: "lethe-importer is not running in pm2."
+        success_msg: "lethe-importer pm2 process ✓"
+
+    - name: Assert lethe-frontend is online
+      ansible.builtin.assert:
+        that: "'lethe-frontend' in pm2_list.stdout"
+        fail_msg: "lethe-frontend is not running in pm2."
+        success_msg: "lethe-frontend pm2 process ✓"
+
+    # ── Summary ────────────────────────────────────────────────
+    - name: All health checks passed
+      ansible.builtin.debug:
+        msg: "All Lethe services are healthy ✓"

@@ -1,0 +1,34 @@
+---
+# ansible/site.yml
+# Full provision + deploy: installs all services and deploys every component.
+# Run: ansible-playbook -i inventory/hosts.ini site.yml
+
+- name: Provision and deploy Lethe
+  hosts: lethe
+  gather_facts: true
+
+  pre_tasks:
+    - name: Verify group_vars/all.yml exists
+      ansible.builtin.stat:
+        path: "{{ playbook_dir }}/group_vars/all.yml"
+      register: gvars
+      delegate_to: localhost
+      run_once: true
+
+    - name: Fail if group_vars/all.yml is missing
+      ansible.builtin.fail:
+        msg: >
+          Please copy ansible/group_vars/all.yml.example to ansible/group_vars/all.yml
+          and fill in your secrets before running this playbook.
+      when: not gvars.stat.exists
+      delegate_to: localhost
+      run_once: true
+
+  roles:
+    - role: common
+    - role: postgres
+    - role: redis
+    - role: minio
+    - role: backend
+    - role: importers
+    - role: frontend

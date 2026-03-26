@@ -1,0 +1,26 @@
+---
+# roles/redis/tasks/main.yml
+
+- name: Install Redis
+  ansible.builtin.apt:
+    name: redis-server
+    state: present
+  become: true
+
+- name: Ensure Redis is configured to bind on the correct address
+  ansible.builtin.lineinfile:
+    path: /etc/redis/redis.conf
+    regexp: '^bind '
+    line: 'bind {{ redis_bind_address }} ::1'
+  become: true
+  notify: Restart Redis
+
+- name: Ensure Redis service is started and enabled
+  ansible.builtin.service:
+    name: redis-server
+    state: started
+    enabled: true
+  become: true
+
+- name: Flush Redis handlers
+  ansible.builtin.meta: flush_handlers

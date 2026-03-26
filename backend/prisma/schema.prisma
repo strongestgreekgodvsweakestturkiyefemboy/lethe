@@ -1,0 +1,184 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum JobStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  FAILED_RATE_LIMIT
+}
+
+enum DataType {
+  TEXT
+  IMAGE
+  VIDEO
+  AUDIO
+  FILE
+}
+
+model User {
+  id           String           @id @default(cuid())
+  username     String?          @unique
+  passwordHash String?
+  email        String?          @unique
+  jobs         Job[]
+  dataItems    DataItem[]
+  creators     Creator[]
+  favorites    UserFavorite[]
+  preferences  UserPreferences?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+}
+
+model UserFavorite {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  creatorId String
+  creator   Creator  @relation(fields: [creatorId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([userId, creatorId])
+}
+
+model UserPreferences {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id])
+  fontSize   Int      @default(14)
+  fontFamily String   @default("sans-serif")
+  bgColor    String   @default("#030712")
+  fontColor  String   @default("#ffffff")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Job {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  targetSite   String
+  status       JobStatus @default(PENDING)
+  progressPct  Int       @default(0)
+  errorMessage String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model DataItem {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  sourceSite   String
+  dataType     DataType
+  content      String?
+  fileUrl      String?
+  sourcePostId String?
+  publishedAt  DateTime?
+  createdAt    DateTime  @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Hierarchical post / creator models (Patreon-style, via Kemono)
+// ---------------------------------------------------------------------------
+
+/// A creator on a source platform (e.g. a Patreon creator imported via Kemono).
+model Creator {
+  id           String         @id @default(cuid())
+  userId       String
+  user         User           @relation(fields: [userId], references: [id])
+  sourceSite   String         // importer name, e.g. "kemono" or "patreon"
+  serviceType  String         // platform name, e.g. "patreon", "fanbox"
+  externalId   String         // creator ID on the source platform
+  name         String?
+  thumbnailUrl String?        // avatar S3 key (or external URL fallback)
+  bannerUrl    String?        // banner/header S3 key
+  posts        Post[]
+  favorites    UserFavorite[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  // Keyed by (userId, serviceType, externalId) so that the same creator
+  // imported from multiple sources (e.g. kemono AND patreon directly) maps
+  // to a single Creator row and their posts are merged/deduped automatically.
+  @@unique([userId, serviceType, externalId])
+}
+
+/// A single post (or announcement) published by a Creator.
+/// Title and content are stored in PostRevision — always read the revision
+/// with the highest id for the current title/content.
+model Post {
+  id          String          @id @default(cuid())
+  creatorId   String
+  creator     Creator         @relation(fields: [creatorId], references: [id])
+  externalId  String          // post ID on the source platform
+  publishedAt DateTime?
+  attachments PostAttachment[]
+  comments    Comment[]
+  revisions   PostRevision[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([creatorId, externalId])
+}
+
+/// A file attached to a Post (image, video, audio, or other file).
+model PostAttachment {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id])
+  fileUrl   String   // S3 object key
+  dataType  DataType
+  name      String?  // original filename
+  createdAt DateTime @default(now())
+}
+
+/// Snapshot of a Post's title/content saved whenever the post is re-imported
+/// with different content (revision tracking).
+model PostRevision {
+  id                 String   @id @default(cuid())
+  postId             String
+  post               Post     @relation(fields: [postId], references: [id])
+  title              String?
+  content            String?
+  /// When set, identifies a historical revision imported from the source platform.
+  /// NULL means this is a "current" revision row written during a normal import.
+  revisionExternalId String?
+  createdAt          DateTime @default(now())
+
+  @@unique([postId, revisionExternalId])
+}
+
+/// A comment left on a Post.
+/// Content is stored in CommentRevision — always read the revision with the
+/// highest id for the current content.
+model Comment {
+  id          String            @id @default(cuid())
+  postId      String
+  post        Post              @relation(fields: [postId], references: [id])
+  externalId  String            // comment ID on the source platform
+  authorName  String?
+  publishedAt DateTime?
+  revisions   CommentRevision[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@unique([postId, externalId])
+}
+
+/// Snapshot of a Comment's content saved whenever the comment is re-imported
+/// with different content (revision tracking).
+model CommentRevision {
+  id        String   @id @default(cuid())
+  commentId String
+  comment   Comment  @relation(fields: [commentId], references: [id])
+  content   String
+  createdAt DateTime @default(now())
+}

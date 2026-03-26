@@ -1,0 +1,42 @@
+---
+# roles/importers/tasks/main.yml
+
+- name: Ensure python3 is installed
+  ansible.builtin.apt:
+    name:
+      - "{{ python_version }}"
+      - "{{ python_version }}-venv"
+      - "{{ python_version }}-dev"
+    state: present
+  become: true
+
+- name: Create Python virtual environment for importers
+  ansible.builtin.command: "{{ python_version }} -m venv {{ lethe_root }}/importers/.venv"
+  args:
+    creates: "{{ lethe_root }}/importers/.venv"
+
+- name: Install Python dependencies
+  ansible.builtin.pip:
+    requirements: "{{ lethe_root }}/importers/requirements.txt"
+    virtualenv: "{{ lethe_root }}/importers/.venv"
+    state: present
+
+- name: Write importers .env file
+  ansible.builtin.template:
+    src: importers.env.j2
+    dest: "{{ lethe_root }}/importers/.env"
+    mode: '0600'
+
+- name: Start/restart importer worker with pm2
+  ansible.builtin.command: >
+    pm2 start {{ lethe_root }}/importers/main.py
+    --name lethe-importer
+    --interpreter {{ lethe_root }}/importers/.venv/bin/python
+    --update-env
+    -f
+  register: pm2_importer
+  changed_when: true
+
+- name: Save pm2 process list
+  ansible.builtin.command: pm2 save
+  changed_when: false

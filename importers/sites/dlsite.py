@@ -213,56 +213,63 @@ class DLsiteScraper(BaseScraper):
                     "Fetching DLsite work info",
                     extra={"job_id": self.job_id, "work_id": wid},
                 )
-                info = await self._fetch_work_info(client, wid, headers)
-                if info is None:
-                    continue
+                try:
+                    info = await self._fetch_work_info(client, wid, headers)
+                    if info is None:
+                        continue
 
-                maker = info.get("maker_name") or info.get("circle") or ""
-                maker_id = str(
-                    info.get("maker_id") or info.get("circle_id") or maker or ""
-                )
-                title = info.get("work_name") or info.get("title") or wid
-                # DLsite doesn't have "posts", so treat each work as a post
-                content_parts: list[str] = []
-                if info.get("intro_s"):
-                    content_parts.append(f"<p>{info['intro_s']}</p>")
-                published_at = info.get("regist_date") or info.get("dl_date")
+                    maker = info.get("maker_name") or info.get("circle") or ""
+                    maker_id = str(
+                        info.get("maker_id") or info.get("circle_id") or maker or ""
+                    )
+                    title = info.get("work_name") or info.get("title") or wid
+                    # DLsite doesn't have "posts", so treat each work as a post
+                    content_parts: list[str] = []
+                    if info.get("intro_s"):
+                        content_parts.append(f"<p>{info['intro_s']}</p>")
+                    published_at = info.get("regist_date") or info.get("dl_date")
 
-                attachments: list[ScrapedAttachment] = []
+                    attachments: list[ScrapedAttachment] = []
 
-                # Main cover image
-                image_main = info.get("image_main")
-                img_url = image_main.get("url") if isinstance(image_main, dict) else image_main
-                if img_url:
-                    if img_url.startswith("//"):
-                        img_url = "https:" + img_url
-                    att = await self._stream(img_url, headers, "cover.jpg")
-                    if att:
-                        att.data_type = "IMAGE"
-                        attachments.append(att)
-
-                # Sample images
-                for sample in info.get("sample_images") or []:
-                    s_url = sample.get("thumb") or sample.get("url")
-                    if s_url:
-                        if s_url.startswith("//"):
-                            s_url = "https:" + s_url
-                        att = await self._stream(s_url, headers)
+                    # Main cover image
+                    image_main = info.get("image_main")
+                    img_url = image_main.get("url") if isinstance(image_main, dict) else image_main
+                    if img_url:
+                        if img_url.startswith("//"):
+                            img_url = "https:" + img_url
+                        att = await self._stream(img_url, headers, "cover.jpg")
                         if att:
                             att.data_type = "IMAGE"
                             attachments.append(att)
 
-                post = ScrapedPost(
-                    external_id=wid,
-                    creator_external_id=maker_id,
-                    service_type="dlsite",
-                    title=title,
-                    content="".join(content_parts) or None,
-                    published_at=published_at,
-                    attachments=attachments,
-                    creator_name=maker or None,
-                )
-                all_posts.append(post)
+                    # Sample images
+                    for sample in info.get("sample_images") or []:
+                        s_url = sample.get("thumb") or sample.get("url")
+                        if s_url:
+                            if s_url.startswith("//"):
+                                s_url = "https:" + s_url
+                            att = await self._stream(s_url, headers)
+                            if att:
+                                att.data_type = "IMAGE"
+                                attachments.append(att)
+
+                    post = ScrapedPost(
+                        external_id=wid,
+                        creator_external_id=maker_id,
+                        service_type="dlsite",
+                        title=title,
+                        content="".join(content_parts) or None,
+                        published_at=published_at,
+                        attachments=attachments,
+                        creator_name=maker or None,
+                    )
+                    all_posts.append(post)
+                except Exception as exc:
+                    self.logger.warning(
+                        "Failed to process DLsite work — skipping",
+                        extra={"job_id": self.job_id, "work_id": wid, "error": str(exc)},
+                    )
+                    continue
 
                 progress = int((idx + 1) / total * 100)
                 if self.flush_callback and (idx + 1) % 5 == 0:

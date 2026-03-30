@@ -266,53 +266,60 @@ class OnlyFansScraper(BaseScraper):
                     if not pid:
                         continue
 
-                    author = raw.get("author") or {}
-                    c_name = author.get("name") or author.get("username") or ""
-                    c_ext_id = str(author.get("id") or cid)
-                    title = raw.get("title") or ""
-                    content = raw.get("text") or ""
-                    published_at = raw.get("postedAt") or raw.get("publishedAt")
+                    try:
+                        author = raw.get("author") or {}
+                        c_name = author.get("name") or author.get("username") or ""
+                        c_ext_id = str(author.get("id") or cid)
+                        title = raw.get("title") or ""
+                        content = raw.get("text") or ""
+                        published_at = raw.get("postedAt") or raw.get("publishedAt")
 
-                    attachments: list[ScrapedAttachment] = []
-                    for media in raw.get("media") or []:
-                        src = media.get("full") or media.get("preview") or media.get("src")
-                        media_type = media.get("type") or ""
-                        if src:
-                            att = await self._stream(src, base_headers)
-                            if att:
-                                if "video" in media_type.lower():
-                                    att.data_type = "VIDEO"
-                                elif "audio" in media_type.lower():
-                                    att.data_type = "AUDIO"
-                                elif "photo" in media_type.lower() or "image" in media_type.lower():
-                                    att.data_type = "IMAGE"
-                                attachments.append(att)
+                        attachments: list[ScrapedAttachment] = []
+                        for media in raw.get("media") or []:
+                            src = media.get("full") or media.get("preview") or media.get("src")
+                            media_type = media.get("type") or ""
+                            if src:
+                                att = await self._stream(src, base_headers)
+                                if att:
+                                    if "video" in media_type.lower():
+                                        att.data_type = "VIDEO"
+                                    elif "audio" in media_type.lower():
+                                        att.data_type = "AUDIO"
+                                    elif "photo" in media_type.lower() or "image" in media_type.lower():
+                                        att.data_type = "IMAGE"
+                                    attachments.append(att)
 
-                    comments: list[ScrapedComment] = []
-                    for c in raw.get("comments") or []:
-                        ci = str(c.get("id") or "")
-                        if ci:
-                            comments.append(
-                                ScrapedComment(
-                                    external_id=ci,
-                                    content=c.get("text") or "",
-                                    author_name=(c.get("author") or {}).get("name"),
-                                    published_at=c.get("createdAt"),
+                        comments: list[ScrapedComment] = []
+                        for c in raw.get("comments") or []:
+                            ci = str(c.get("id") or "")
+                            if ci:
+                                comments.append(
+                                    ScrapedComment(
+                                        external_id=ci,
+                                        content=c.get("text") or "",
+                                        author_name=(c.get("author") or {}).get("name"),
+                                        published_at=c.get("createdAt"),
+                                    )
                                 )
-                            )
 
-                    post = ScrapedPost(
-                        external_id=pid,
-                        creator_external_id=c_ext_id,
-                        service_type="onlyfans",
-                        title=title,
-                        content=content or None,
-                        published_at=published_at,
-                        attachments=attachments,
-                        comments=comments,
-                        creator_name=c_name or None,
-                    )
-                    all_posts.append(post)
+                        post = ScrapedPost(
+                            external_id=pid,
+                            creator_external_id=c_ext_id,
+                            service_type="onlyfans",
+                            title=title,
+                            content=content or None,
+                            published_at=published_at,
+                            attachments=attachments,
+                            comments=comments,
+                            creator_name=c_name or None,
+                        )
+                        all_posts.append(post)
+                    except Exception as exc:
+                        self.logger.warning(
+                            "Failed to process OnlyFans post — skipping",
+                            extra={"job_id": self.job_id, "post_id": pid, "creator_id": cid, "error": str(exc)},
+                        )
+                        continue
 
                     overall_progress = int(
                         (c_idx / len(creator_ids) + (idx + 1) / (total * len(creator_ids))) * 100

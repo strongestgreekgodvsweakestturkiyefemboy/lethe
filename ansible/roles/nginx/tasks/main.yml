@@ -1,0 +1,120 @@
+---
+# roles/nginx/tasks/main.yml
+# Installs Nginx as a caching reverse proxy in front of the backend and frontend.
+# Listens on port 80, caches static assets, and proxies API + SSE correctly.
+# Supports Debian/Ubuntu (apt, sites-available/sites-enabled) and
+# Arch Linux (pacman, conf.d).
+
+- name: Set Nginx worker user
+  ansible.builtin.set_fact:
+    nginx_worker_user: "{{ 'http' if ansible_facts['os_family'] == 'Archlinux' else 'www-data' }}"
+
+- name: Install Nginx (Debian)
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+  become: true
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Install Nginx (Arch)
+  community.general.pacman:
+    name: nginx
+    state: present
+  become: true
+  when: ansible_facts['os_family'] == "Archlinux"
+
+- name: Deploy clean nginx.conf
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify: Reload Nginx
+
+- name: Remove the default Nginx site configuration
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  become: true
+  notify: Reload Nginx
+
+- name: Create Nginx cache directory
+  ansible.builtin.file:
+    path: /var/cache/nginx/lethe
+    state: directory
+    owner: "{{ nginx_worker_user }}"
+    group: "{{ nginx_worker_user }}"
+    mode: '0750'
+  become: true
+
+# ── Debian: sites-available / sites-enabled ───────────────────
+- name: Write Lethe Nginx virtual-host config (Debian)
+  ansible.builtin.template:
+    src: lethe.conf.j2
+    dest: /etc/nginx/sites-available/lethe
+    mode: '0644'
+  become: true
+  notify: Reload Nginx
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Enable Lethe site (Debian)
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/lethe
+    dest: /etc/nginx/sites-enabled/lethe
+    state: link
+  become: true
+  notify: Reload Nginx
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Disable default Nginx site (Debian)
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  become: true
+  notify: Reload Nginx
+  when: ansible_facts['os_family'] == "Debian"
+
+# ── Arch Linux: conf.d ────────────────────────────────────────
+- name: Create Nginx conf.d directory (Arch)
+  ansible.builtin.file:
+    path: /etc/nginx/conf.d
+    state: directory
+    mode: '0755'
+  become: true
+  when: ansible_facts['os_family'] == "Archlinux"
+
+- name: Ensure nginx.conf includes conf.d (Arch)
+  ansible.builtin.lineinfile:
+    path: /etc/nginx/nginx.conf
+    regexp: 'include /etc/nginx/conf\.d/\*\.conf;'
+    insertafter: 'http \{'
+    line: '    include /etc/nginx/conf.d/*.conf;'
+  become: true
+  notify: Reload Nginx
+  when: ansible_facts['os_family'] == "Archlinux"
+
+- name: Write Lethe Nginx config (Arch)
+  ansible.builtin.template:
+    src: lethe.conf.j2
+    dest: /etc/nginx/conf.d/lethe.conf
+    mode: '0644'
+  become: true
+  notify: Reload Nginx
+  when: ansible_facts['os_family'] == "Archlinux"
+
+- name: Validate Nginx configuration
+  ansible.builtin.command: nginx -t
+  become: true
+  changed_when: false
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure Nginx is started and enabled
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true
+  become: true

@@ -65,6 +65,10 @@ class ScrapedPost:
     creator_name: str | None = None  # display name fetched from the source platform
     creator_thumbnail_url: str | None = None  # avatar S3 key (or external URL fallback)
     creator_banner_url: str | None = None  # banner/header S3 key
+    tags: list[str] = field(default_factory=list)  # tag names imported from the source platform
+    discord_author_id: str | None = None  # Discord user snowflake for global tracking
+    discord_guild_id: str | None = None  # Discord guild snowflake this channel belongs to
+    discord_author_info: dict | None = None  # {discordId, username, globalName, avatarUrl}
 
 
 @dataclass
@@ -74,12 +78,13 @@ class ScrapeResult:
     progress_pct: int = 0
     error: str | None = None
     log_message: str | None = None
+    discord_server_info: dict | None = None  # Guild metadata sent once at job completion
 
 
 # Async callback invoked by scrapers to stream partial results to the backend.
-# Arguments: (posts, items, progress_pct, log_message)
+# Arguments: (posts, items, progress_pct, log_message, discord_server_info)
 FlushCallback = Callable[
-    [list[ScrapedPost], list[ScrapedItem], int, str | None],
+    [list[ScrapedPost], list[ScrapedItem], int, str | None, dict | None],
     Awaitable[None],
 ]
 

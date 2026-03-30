@@ -9,7 +9,7 @@ export default async function CreatorPostsPage({ params }: Props) {
   const { creatorId } = await params;
 
   return (
-    <div className="min-h-[calc(100vh-3rem)] bg-gray-950 text-white">
+    <div className="min-h-[calc(100vh-3rem)] user-bg">
       <div className="max-w-6xl mx-auto px-4 py-8 space-y-8">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Posts</h1>

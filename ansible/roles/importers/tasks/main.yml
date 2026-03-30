@@ -1,17 +1,33 @@
 ---
 # roles/importers/tasks/main.yml
+# Supports Debian/Ubuntu (apt) and Arch Linux (pacman).
 
-- name: Ensure python3 is installed
+## --- DEBIAN/UBUNTU SECTION --- ##
+
+- name: Debian - Ensure Python is installed
   ansible.builtin.apt:
-    name:
-      - "{{ python_version }}"
-      - "{{ python_version }}-venv"
-      - "{{ python_version }}-dev"
+    name: ["{{ python_version }}", "{{ python_version }}-venv", "{{ python_version }}-dev"]
     state: present
   become: true
+  when: ansible_facts['os_family'] == "Debian"
 
-- name: Create Python virtual environment for importers
-  ansible.builtin.command: "{{ python_version }} -m venv {{ lethe_root }}/importers/.venv"
+## --- ARCH LINUX SECTION --- ##
+
+- name: Arch - Install Python and build dependencies
+  community.general.pacman:
+    name: [python, python-pip, base-devel, git, python-packaging]
+    state: present
+  become: true
+  when: ansible_facts['os_family'] == "Archlinux"
+
+## --- VIRTUAL ENVIRONMENT & DEPENDENCIES --- ##
+
+- name: Set python executable fact
+  ansible.builtin.set_fact:
+    python_exe: "{{ 'python3' if ansible_facts['os_family'] == 'Archlinux' else python_version }}"
+
+- name: Create Python virtual environment
+  ansible.builtin.command: "{{ python_exe }} -m venv {{ lethe_root }}/importers/.venv"
   args:
     creates: "{{ lethe_root }}/importers/.venv"
 
@@ -19,7 +35,104 @@
   ansible.builtin.pip:
     requirements: "{{ lethe_root }}/importers/requirements.txt"
     virtualenv: "{{ lethe_root }}/importers/.venv"
+
+
+- name: Ensure Python and system dependencies are installed (Debian)
+  ansible.builtin.apt:
+    name:
+      - "{{ python_version }}"
+      - "{{ python_version }}-venv"
+      - "{{ python_version }}-dev"
+      # Playwright/Chromium core dependencies for Debian/Ubuntu
+      - libnss3
+      - libatk1.0-0
+      - libatk-bridge2.0-0
+      - libcups2
+      - libdrm2
+      - libgbm1
+      - libasound2
+      - libasound2t64  # Support for Ubuntu 24.04+
+      - libpangocairo-1.0-0
+      - libxrender1
+      - libxrandr2
+      - libxcomposite1
+      - libxcursor1
+      - libxdamage1
+      - libxkbcommon0
+      - libpango-1.0-0
+      - libcairo2
     state: present
+    update_cache: yes
+  become: true
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Install Playwright system dependencies (Arch Linux)
+  community.general.pacman:
+    name:
+      - alsa-lib
+      - at-spi2-core
+      - cairo
+      - cups
+      - dbus
+      - expat
+      - flac
+      - fontconfig
+      - freetype2
+      - gcc-libs
+      - glib2
+      - glibc
+      - harfbuzz
+      - libdrm
+      - libevent
+      - libffi
+      - libice
+      - libjpeg-turbo
+      - libpng
+      - libpulse
+      - libsm
+      - libvpx
+      - libwebp
+      - libx11
+      - libxau
+      - libxcb
+      - libxcomposite
+      - libxdamage
+      - libxdmcp
+      - libxext
+      - libxfixes
+      - libxi
+      - libxkbcommon
+      - libxml2
+      - libxrandr
+      - libxrender
+      - libxshmfence
+      - libxslt
+      - libxtst
+      - mesa
+      - nspr
+      - nss
+      - opus
+      - pango
+      - pcre2
+      - pixman
+      - zlib
+    state: present
+  become: yes
+  when: ansible_facts['os_family'] == "Archlinux"
+
+- name: Check if Playwright browser cache exists
+  ansible.builtin.stat:
+    path: "{{ ansible_env.HOME }}/.cache/ms-playwright"
+  register: pw_cache
+
+- name: Install Playwright browser binaries
+  ansible.builtin.command: >
+    {{ lethe_root }}/importers/.venv/bin/python -m playwright install chromium
+  when: not pw_cache.stat.exists
+  become: false
+  changed_when: not pw_cache.stat.exists
+
+## --- DEPLOYMENT & SERVICE --- ##
 
 - name: Write importers .env file
   ansible.builtin.template:

@@ -1,0 +1,8 @@
+---
+# roles/postgres/handlers/main.yml
+
+- name: Restart PostgreSQL
+  ansible.builtin.service:
+    name: postgresql
+    state: restarted
+  become: true

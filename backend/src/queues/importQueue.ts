@@ -12,12 +12,26 @@ export interface ImportJobPayload {
 
 let importQueue: Queue<ImportJobPayload> | null = null;
 
-function parseRedisConnection(url: string): { host: string; port: number } {
+interface RedisConnectionConfig {
+  host: string;
+  port: number;
+  password?: string;
+  username?: string;
+}
+
+function parseRedisConnection(url: string): RedisConnectionConfig {
   const parsed = new URL(url);
-  return {
+  const config: RedisConnectionConfig = {
     host: parsed.hostname || 'localhost',
     port: parseInt(parsed.port || '6379', 10),
   };
+  if (parsed.password) {
+    config.password = decodeURIComponent(parsed.password);
+  }
+  if (parsed.username) {
+    config.username = decodeURIComponent(parsed.username);
+  }
+  return config;
 }
 
 export function getImportQueue(): Queue<ImportJobPayload> {

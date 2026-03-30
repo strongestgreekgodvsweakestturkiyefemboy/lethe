@@ -1,0 +1,7 @@
+---
+# roles/keepalived/defaults/main.yml
+keepalived_auth_pass: "CHANGE_ME"
+# The VIP floats between lb hosts — it must NOT match any server IP.
+lb_virtual_ip: "192.168.122.200"
+lb_virtual_interface: "eth0"
+keepalived_vrrp_id: 51

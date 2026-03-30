@@ -3,10 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 
-const BACKEND_URL =
-  typeof window !== 'undefined'
-    ? (process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001')
-    : 'http://localhost:3001';
+const BACKEND_URL = '';
 
 interface PostRevisionSummary {
   title: string | null;
@@ -25,6 +22,7 @@ interface PostListItem {
   createdAt: string;
   updatedAt: string;
   revisions: PostRevisionSummary[];
+  tags: { tag: { id: string; name: string } }[];
   _count: { attachments: number; comments: number; revisions: number };
   creator: PostCreatorSummary;
 }
@@ -49,7 +47,7 @@ function PostCard({ post }: { post: PostListItem }) {
   return (
     <Link
       href={href}
-      className="bg-gray-800 rounded-xl p-4 hover:bg-gray-700 transition-colors space-y-2"
+      className="user-card rounded-xl p-4 space-y-2"
     >
       <p className="font-semibold text-white line-clamp-2">{title}</p>
       {preview && (
@@ -69,6 +67,18 @@ function PostCard({ post }: { post: PostListItem }) {
           <span>🔄 {post._count.revisions} revisions</span>
         )}
       </div>
+      {post.tags && post.tags.length > 0 && (
+        <div className="space-y-1 pt-1">
+          <p className="text-xs text-gray-500 uppercase tracking-wide">Importer Tags</p>
+          <div className="flex flex-wrap gap-1">
+            {post.tags.map((pt) => (
+              <span key={pt.tag.id} className="text-xs px-2 py-0.5 rounded-full border" style={{ backgroundColor: 'var(--user-card-hover-bg)', borderColor: 'var(--user-border-color)' }}>
+                {pt.tag.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </Link>
   );
 }
@@ -138,7 +148,7 @@ export default function PostsList({ creatorId }: Props) {
         <div className="flex justify-center">
           <button
             onClick={() => loadPage(cursor, false)}
-            className="bg-gray-700 hover:bg-gray-600 rounded-lg px-6 py-2 text-sm font-medium transition-colors"
+            className="user-btn rounded-lg px-6 py-2 text-sm font-medium"
           >
             Load more
           </button>

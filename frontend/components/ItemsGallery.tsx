@@ -2,10 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 
-const BACKEND_URL =
-  typeof window !== 'undefined'
-    ? (process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001')
-    : 'http://localhost:3001';
+const BACKEND_URL = '';
 
 interface DataItem {
   id: string;

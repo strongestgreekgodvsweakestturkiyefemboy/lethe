@@ -1,0 +1,215 @@
+{
+  "id": null,
+  "uid": "lethe-import-pipeline",
+  "title": "Lethe — Import Pipeline",
+  "description": "Monitors the /api/v1/imports/start endpoint, SSE streams, CORS errors, and job queue health. Use this dashboard to diagnose NS_ERROR_NET_RESET failures and import job issues.\n\nLog queries assume the default nginx combined log format: $remote_addr - $remote_user [$time_local] \"$request\" $status $body_bytes_sent \"$http_referer\" \"$http_user_agent\"",
+  "tags": ["lethe", "imports"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Import Requests — HTTP Status Codes (nginx)",
+      "description": "HTTP status codes returned by nginx for /api/v1/imports/start POST requests. 2xx = success, 4xx = client error, 5xx = server/backend error, 0 = connection reset (NS_ERROR_NET_RESET).",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "{{ loki_datasource_uid | default('loki') }}" },
+      "targets": [
+        {
+          "expr": "sum by (status) (count_over_time({job=\"nginx\"} |= \"/api/v1/imports/start\" | pattern `<_> \"<method> <_> <_>\" <status> <_>` | method = \"POST\" [$__interval]))",
+          "legendFormat": "HTTP {{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "lineWidth": 2 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "HTTP 2xx" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "HTTP 4xx" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "HTTP 5xx" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "title": "CORS Preflight (OPTIONS) vs Actual POST — nginx",
+      "description": "Compares OPTIONS preflight requests with POST requests to /api/v1/imports/start. A gap (OPTIONS succeeds but POST count is 0 or returns errors) confirms a CORS or connection-reset issue.",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "{{ loki_datasource_uid | default('loki') }}" },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"nginx\"} |= \"/api/v1/imports/start\" | pattern `<_> \"OPTIONS <_> <_>\" <_> <_>` [$__interval]))",
+          "legendFormat": "OPTIONS preflight",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(count_over_time({job=\"nginx\"} |= \"/api/v1/imports/start\" | pattern `<_> \"POST <_> <_>\" <_> <_>` [$__interval]))",
+          "legendFormat": "POST requests",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Backend Error Log Rate",
+      "description": "Error-level log lines from the Lethe backend. Spikes here correlate with import failures — check the 'Backend Error Logs' panel below for details.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "{{ loki_datasource_uid | default('loki') }}" },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"lethe\"} |= \"\\\"level\\\":\\\"error\\\"\" [$__interval]))",
+          "legendFormat": "Backend errors/interval",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(count_over_time({job=\"lethe\"} |= \"startImport failed\" [$__interval]))",
+          "legendFormat": "startImport failures",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Backend errors/interval" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "startImport failures" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "title": "HAProxy — Request Rate and Error Rate",
+      "description": "Request rate and HTTP error rate from HAProxy. Use to detect load-balancer-level drops before requests reach nginx.",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "{{ prometheus_datasource_uid | default('prometheus') }}" },
+      "targets": [
+        {
+          "expr": "sum(rate(haproxy_backend_http_requests_total{backend=\"app_servers\"}[1m]))",
+          "legendFormat": "Requests/s",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(haproxy_backend_http_responses_total{backend=\"app_servers\", code=~\"5..\"}[1m]))",
+          "legendFormat": "5xx errors/s",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(haproxy_backend_connection_errors_total{backend=\"app_servers\"}[1m]))",
+          "legendFormat": "Connection errors/s",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "5xx errors/s" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Connection errors/s" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "title": "Import Job Status (from backend logs)",
+      "description": "Import job status transitions logged by the backend. Useful for tracking PENDING → IN_PROGRESS → COMPLETED/FAILED flow.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "{{ loki_datasource_uid | default('loki') }}" },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"lethe\"} |= \"Job enqueued\" [$__interval]))",
+          "legendFormat": "Jobs enqueued",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(count_over_time({job=\"lethe\"} |= \"COMPLETED\" [$__interval]))",
+          "legendFormat": "COMPLETED",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(count_over_time({job=\"lethe\"} |= \"FAILED\" [$__interval]))",
+          "legendFormat": "FAILED",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "COMPLETED" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "FAILED" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "title": "HAProxy Backend Health",
+      "description": "Health status of nginx (the HAProxy backend server). 1 = UP, 0 = DOWN. If this drops during an import failure, the root cause is at the LB/nginx layer.",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 16, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "{{ prometheus_datasource_uid | default('prometheus') }}" },
+      "targets": [
+        {
+          "expr": "haproxy_server_status{backend=\"app_servers\"}",
+          "legendFormat": "{{server}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "1": { "text": "UP", "color": "green" }, "0": { "text": "DOWN", "color": "red" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] },
+          "color": { "mode": "thresholds" }
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Nginx — All API Requests by Status",
+      "description": "All requests to /api/ grouped by HTTP status. Look for unusual 502/504 counts which indicate the backend is unreachable from nginx.",
+      "type": "bargauge",
+      "gridPos": { "x": 12, "y": 20, "w": 6, "h": 4 },
+      "datasource": { "type": "loki", "uid": "{{ loki_datasource_uid | default('loki') }}" },
+      "targets": [
+        {
+          "expr": "sum by (status) (count_over_time({job=\"nginx\"} |= \"/api/\" | pattern `<_> \"<_> <_> <_>\" <status> <_>` [$__range]))",
+          "legendFormat": "{{status}}",
+          "refId": "A",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Backend Error Logs",
+      "description": "Raw error log lines from the backend. Filter by 'startImport failed' to see import-specific errors with their messages.",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 24, "w": 24, "h": 10 },
+      "datasource": { "type": "loki", "uid": "{{ loki_datasource_uid | default('loki') }}" },
+      "options": { "dedupStrategy": "none", "showTime": true, "sortOrder": "Descending" },
+      "targets": [
+        {
+          "expr": "{job=\"lethe\"} |= \"\\\"level\\\":\\\"error\\\"\"",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Nginx Access Log — Import Endpoint",
+      "description": "Raw nginx access log lines for /api/v1/imports/start. Look for missing status codes (connection resets show as '-' or '000') or unexpected response times.",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 34, "w": 24, "h": 8 },
+      "datasource": { "type": "loki", "uid": "{{ loki_datasource_uid | default('loki') }}" },
+      "options": { "dedupStrategy": "none", "showTime": true, "sortOrder": "Descending" },
+      "targets": [
+        {
+          "expr": "{job=\"nginx\"} |= \"/api/v1/imports\"",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

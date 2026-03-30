@@ -3,12 +3,13 @@
 # Health-check playbook — verifies every service is responsive.
 # Run: ansible-playbook -i inventory/hosts.ini test.yml
 
-- name: Health-check Lethe services
-  hosts: lethe
+# ── Data tier checks ──────────────────────────────────────────
+- name: Health-check data tier
+  hosts: db:cache:storage
   gather_facts: false
-
-  vars:
-    backend_url: "http://{{ backend_host }}:{{ backend_port }}"
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
 
   tasks:
     # ── PostgreSQL ─────────────────────────────────────────────
@@ -20,24 +21,31 @@
         login_user: "{{ postgres_user }}"
         login_password: "{{ postgres_password }}"
       register: pg_ping
+      when: inventory_hostname in groups['db']
 
     - name: Assert PostgreSQL is up
       ansible.builtin.assert:
         that: pg_ping.is_available
         fail_msg: "PostgreSQL is NOT reachable."
         success_msg: "PostgreSQL ✓"
+      when: inventory_hostname in groups['db']
 
-    # ── Redis ──────────────────────────────────────────────────
-    - name: Check Redis responds to PING
-      ansible.builtin.command: redis-cli -h {{ redis_host }} -p {{ redis_port }} ping
+    # ── Valkey ─────────────────────────────────────────────────
+    - name: Check Valkey responds to PING
+      ansible.builtin.command: >
+        valkey-cli -h {{ redis_host }} -p {{ redis_port }}
+        -a {{ redis_password }} ping
       register: redis_ping
       changed_when: false
+      no_log: true
+      when: inventory_hostname in groups['cache']
 
-    - name: Assert Redis PONG
+    - name: Assert Valkey PONG
       ansible.builtin.assert:
         that: "'PONG' in redis_ping.stdout"
-        fail_msg: "Redis is NOT responding."
-        success_msg: "Redis ✓"
+        fail_msg: "Valkey is NOT responding."
+        success_msg: "Valkey ✓"
+      when: inventory_hostname in groups['cache']
 
     # ── MinIO ──────────────────────────────────────────────────
     - name: Check MinIO API port is open
@@ -46,16 +54,25 @@
         port: "{{ minio_port }}"
         timeout: 5
         state: started
-      register: minio_check
+      when: inventory_hostname in groups['storage']
 
     - name: Show MinIO status
       ansible.builtin.debug:
         msg: "MinIO ✓ (port {{ minio_port }} is open)"
+      when: inventory_hostname in groups['storage']
 
-    # ── Backend /healthz ───────────────────────────────────────
+# ── Application tier checks ───────────────────────────────────
+- name: Health-check backend
+  hosts: backend
+  gather_facts: false
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+
+  tasks:
     - name: Hit backend /healthz endpoint
       ansible.builtin.uri:
-        url: "{{ backend_url }}/healthz"
+        url: "http://127.0.0.1:{{ backend_port }}/healthz"
         method: GET
         status_code: 200
         timeout: 10
@@ -67,35 +84,179 @@
         fail_msg: "Backend /healthz returned unexpected response."
         success_msg: "Backend ✓ (/healthz returned ok)"
 
-    # ── pm2 process list ───────────────────────────────────────
-    - name: List pm2 processes
+    - name: List pm2 processes on backend
       ansible.builtin.command: pm2 list
-      register: pm2_list
+      register: pm2_backend
+      changed_when: false
+
+    - name: Assert lethe-backend is online
+      ansible.builtin.assert:
+        that: "'lethe-backend' in pm2_backend.stdout"
+        fail_msg: "lethe-backend is not running in pm2."
+        success_msg: "lethe-backend pm2 process ✓"
+
+- name: Health-check frontend
+  hosts: frontend
+  gather_facts: false
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+
+  tasks:
+    - name: List pm2 processes on frontend
+      ansible.builtin.command: pm2 list
+      register: pm2_frontend
+      changed_when: false
+
+    - name: Assert lethe-frontend is online
+      ansible.builtin.assert:
+        that: "'lethe-frontend' in pm2_frontend.stdout"
+        fail_msg: "lethe-frontend is not running in pm2."
+        success_msg: "lethe-frontend pm2 process ✓"
+
+- name: Health-check importer workers
+  hosts: importers
+  gather_facts: false
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+
+  tasks:
+    - name: List pm2 processes on importers
+      ansible.builtin.command: pm2 list
+      register: pm2_importers
       changed_when: false
 
     - name: Show pm2 processes
       ansible.builtin.debug:
-        var: pm2_list.stdout_lines
-
-    - name: Assert lethe-backend is online
-      ansible.builtin.assert:
-        that: "'lethe-backend' in pm2_list.stdout"
-        fail_msg: "lethe-backend is not running in pm2."
-        success_msg: "lethe-backend pm2 process ✓"
+        var: pm2_importers.stdout_lines
 
     - name: Assert lethe-importer is online
       ansible.builtin.assert:
-        that: "'lethe-importer' in pm2_list.stdout"
+        that: "'lethe-importer' in pm2_importers.stdout"
         fail_msg: "lethe-importer is not running in pm2."
         success_msg: "lethe-importer pm2 process ✓"
 
-    - name: Assert lethe-frontend is online
-      ansible.builtin.assert:
-        that: "'lethe-frontend' in pm2_list.stdout"
-        fail_msg: "lethe-frontend is not running in pm2."
-        success_msg: "lethe-frontend pm2 process ✓"
+# ── Load-balancer tier checks ─────────────────────────────────
+- name: Health-check load balancer tier
+  hosts: lb
+  gather_facts: false
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
 
-    # ── Summary ────────────────────────────────────────────────
-    - name: All health checks passed
+  tasks:
+    - name: Check Nginx is serving port 8080
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 8080
+        timeout: 5
+        state: started
+
+    - name: Show Nginx status
+      ansible.builtin.debug:
+        msg: "Nginx ✓ (port 8080 is open)"
+
+    - name: Verify Nginx lb-health endpoint
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:8080/lb-health"
+        method: GET
+        status_code: 200
+        timeout: 10
+      register: nginx_lb_health
+
+    - name: Assert Nginx lb-health is responding
+      ansible.builtin.assert:
+        that: nginx_lb_health.status == 200
+        fail_msg: "Nginx /lb-health check failed."
+        success_msg: "Nginx /lb-health ✓"
+
+    - name: Check HAProxy frontend port is open
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ haproxy_frontend_port }}"
+        timeout: 5
+        state: started
+
+    - name: Verify HAProxy health endpoint
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ haproxy_frontend_port }}/haproxy-health"
+        method: GET
+        status_code: 200
+        timeout: 10
+      register: haproxy_health
+
+    - name: Assert HAProxy is responding
+      ansible.builtin.assert:
+        that: haproxy_health.status == 200
+        fail_msg: "HAProxy health check failed."
+        success_msg: "HAProxy ✓"
+
+    - name: Check Keepalived is running
+      ansible.builtin.service_facts:
+
+    - name: Assert Keepalived is active
+      ansible.builtin.assert:
+        that: ansible_facts.services['keepalived.service'].state == 'running'
+        fail_msg: "Keepalived is not running."
+        success_msg: "Keepalived ✓"
+
+# ── Monitoring tier checks ────────────────────────────────────
+- name: Health-check monitoring stack
+  hosts: monitoring
+  gather_facts: false
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+
+  tasks:
+    - name: Check Prometheus is up
+      ansible.builtin.uri:
+        url: "http://localhost:{{ prometheus_port }}/-/healthy"
+        method: GET
+        status_code: 200
+        timeout: 10
+      register: prom_health
+
+    - name: Assert Prometheus healthy
+      ansible.builtin.assert:
+        that: prom_health.status == 200
+        fail_msg: "Prometheus health check failed."
+        success_msg: "Prometheus ✓"
+
+    - name: Check Loki is up
+      ansible.builtin.uri:
+        url: "http://localhost:{{ loki_port }}/ready"
+        method: GET
+        status_code: 200
+        timeout: 10
+      register: loki_health
+
+    - name: Assert Loki healthy
+      ansible.builtin.assert:
+        that: loki_health.status == 200
+        fail_msg: "Loki health check failed."
+        success_msg: "Loki ✓"
+
+    - name: Check Grafana is up
+      ansible.builtin.uri:
+        url: "http://localhost:{{ grafana_port }}/api/health"
+        method: GET
+        status_code: 200
+        timeout: 10
+      register: grafana_health
+
+    - name: Assert Grafana healthy
+      ansible.builtin.assert:
+        that: grafana_health.status == 200
+        fail_msg: "Grafana health check failed."
+        success_msg: "Grafana ✓"
+
+# ── Summary ───────────────────────────────────────────────────
+- name: All checks passed
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Print summary
       ansible.builtin.debug:
         msg: "All Lethe services are healthy ✓"

@@ -2,9 +2,11 @@ import { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import jwt from 'jsonwebtoken';
 import logger from '../utils/logger';
 
 const prisma = new PrismaClient();
+const JWT_SECRET = process.env.JWT_SECRET ?? 'lethe-dev-secret-change-in-production';
 
 const s3 = new S3Client({
   endpoint: process.env.AWS_ENDPOINT_URL,
@@ -18,6 +20,18 @@ const s3 = new S3Client({
 
 const BUCKET = process.env.AWS_BUCKET_NAME ?? 'lethe-imports';
 const PAGE_SIZE = 50;
+
+/** Optionally extract userId from Bearer token without requiring it. */
+function getUserIdOptional(req: Request): string | null {
+  const h = req.headers.authorization;
+  if (!h?.startsWith('Bearer ')) return null;
+  try {
+    const p = jwt.verify(h.slice(7), JWT_SECRET) as { sub: string };
+    return p.sub;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * GET /api/v1/items
@@ -129,6 +143,7 @@ export async function listCreators(
   try {
     const creators = await prisma.creator.findMany({
       where: {
+        NOT: { serviceType: 'discord' },
         ...(userId ? { userId } : {}),
         ...(sourceSite ? { sourceSite } : {}),
         ...(serviceType ? { serviceType } : {}),
@@ -216,6 +231,10 @@ export async function listPosts(req: Request, res: Response, next: NextFunction)
           },
           orderBy: [{ publishedAt: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }],
         },
+        tags: {
+          select: { tag: { select: { id: true, name: true } } },
+          orderBy: { tag: { name: 'asc' } },
+        },
         _count: { select: { attachments: true, comments: true, revisions: true } },
         creator: {
           select: { serviceType: true, externalId: true, name: true },
@@ -239,10 +258,13 @@ export async function listPosts(req: Request, res: Response, next: NextFunction)
  * GET /api/v1/posts/:postId
  *
  * Returns the full details of a single Post including attachments, comments,
- * and revision history.
+ * revision history, importer tags, and aggregated user-added tags.
+ * If a Bearer token is provided the response also marks which user-tags the
+ * current user personally added (addedByMe).
  */
 export async function getPost(req: Request, res: Response, next: NextFunction): Promise<void> {
   const { postId } = req.params;
+  const currentUserId = getUserIdOptional(req);
   logger.debug('getPost called', { postId });
 
   try {
@@ -275,6 +297,14 @@ export async function getPost(req: Request, res: Response, next: NextFunction): 
           select: { id: true, title: true, content: true, createdAt: true, revisionExternalId: true },
           orderBy: { id: 'desc' },
         },
+        tags: {
+          select: { tag: { select: { id: true, name: true } } },
+          orderBy: { tag: { name: 'asc' } },
+        },
+        userTags: {
+          select: { tagId: true, userId: true, tag: { select: { id: true, name: true } }, createdAt: true },
+          orderBy: { tag: { name: 'asc' } },
+        },
         creator: {
           select: { id: true, sourceSite: true, serviceType: true, externalId: true, name: true, thumbnailUrl: true, bannerUrl: true },
         },
@@ -287,8 +317,23 @@ export async function getPost(req: Request, res: Response, next: NextFunction): 
       return;
     }
 
+    // Deduplicate user tags (same tag may be added by multiple users)
+    const seenUserTagIds = new Set<string>();
+    const userTags: Array<{ tag: { id: string; name: string }; addedByMe: boolean }> = [];
+    for (const ut of post.userTags) {
+      if (!seenUserTagIds.has(ut.tagId)) {
+        seenUserTagIds.add(ut.tagId);
+        userTags.push({ tag: ut.tag, addedByMe: ut.userId === currentUserId });
+      } else if (ut.userId === currentUserId) {
+        const existing = userTags.find((u) => u.tag.id === ut.tagId);
+        if (existing) existing.addedByMe = true;
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { userTags: _rawUserTags, ...postData } = post;
     logger.debug('getPost returning post', { postId });
-    res.json({ post });
+    res.json({ post: { ...postData, userTags } });
   } catch (err) {
     logger.error('getPost failed', { postId, error: (err as Error).message });
     next(err);
@@ -300,6 +345,8 @@ export async function getPost(req: Request, res: Response, next: NextFunction): 
  *
  * Look up a creator by (serviceType, externalId) and return their posts.
  * Optionally scoped to a userId via query param; defaults to first match.
+ * If a Bearer token is provided the response includes user-tags for the creator
+ * with addedByMe flags.
  */
 export async function getCreatorByExternalId(
   req: Request,
@@ -308,6 +355,7 @@ export async function getCreatorByExternalId(
 ): Promise<void> {
   const { serviceType, creatorExternalId } = req.params;
   const { userId, cursor } = req.query as Record<string, string | undefined>;
+  const currentUserId = getUserIdOptional(req);
   logger.debug('getCreatorByExternalId called', { serviceType, creatorExternalId, userId });
 
   const limit = Math.min(parseInt((req.query.limit as string) ?? String(PAGE_SIZE), 10), 100);
@@ -330,12 +378,29 @@ export async function getCreatorByExternalId(
         bannerUrl: true,
         createdAt: true,
         _count: { select: { posts: true } },
+        userTags: {
+          select: { tagId: true, userId: true, tag: { select: { id: true, name: true } } },
+          orderBy: { tag: { name: 'asc' } },
+        },
       },
     });
 
     if (!creator) {
       res.status(404).json({ error: 'Creator not found' });
       return;
+    }
+
+    // Deduplicate and annotate user tags
+    const seenTagIds = new Set<string>();
+    const creatorUserTags: Array<{ tag: { id: string; name: string }; addedByMe: boolean }> = [];
+    for (const ut of creator.userTags) {
+      if (!seenTagIds.has(ut.tagId)) {
+        seenTagIds.add(ut.tagId);
+        creatorUserTags.push({ tag: ut.tag, addedByMe: ut.userId === currentUserId });
+      } else if (ut.userId === currentUserId) {
+        const existing = creatorUserTags.find((u) => u.tag.id === ut.tagId);
+        if (existing) existing.addedByMe = true;
+      }
     }
 
     // Fetch paginated posts for this creator
@@ -356,6 +421,10 @@ export async function getCreatorByExternalId(
           take: 1,
           select: { title: true, content: true },
         },
+        tags: {
+          select: { tag: { select: { id: true, name: true } } },
+          orderBy: { tag: { name: 'asc' } },
+        },
         _count: { select: { attachments: true, comments: true, revisions: true } },
         creator: {
           select: { serviceType: true, externalId: true },
@@ -367,7 +436,9 @@ export async function getCreatorByExternalId(
     const page = hasMore ? posts.slice(0, limit) : posts;
     const nextCursor = hasMore ? page[page.length - 1].id : null;
 
-    res.json({ creator, posts: page, nextCursor });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { userTags: _rawUserTags, ...creatorData } = creator;
+    res.json({ creator: { ...creatorData, userTags: creatorUserTags }, posts: page, nextCursor });
   } catch (err) {
     logger.error('getCreatorByExternalId failed', {
       serviceType,
@@ -437,6 +508,10 @@ export async function getPostByExternalId(
         revisions: {
           select: { id: true, title: true, content: true, createdAt: true, revisionExternalId: true },
           orderBy: { id: 'desc' },
+        },
+        tags: {
+          select: { tag: { select: { id: true, name: true } } },
+          orderBy: { tag: { name: 'asc' } },
         },
         creator: {
           select: { id: true, sourceSite: true, serviceType: true, externalId: true, name: true, thumbnailUrl: true, bannerUrl: true },

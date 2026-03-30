@@ -1,0 +1,37 @@
+---
+- name: Stop MinIO
+  ansible.builtin.service:
+    name: minio
+    state: stopped
+  become: true
+  failed_when: false
+
+- name: Remove MinIO data directory
+  ansible.builtin.file:
+    path: /var/lib/minio/data
+    state: absent
+  become: true
+
+- name: Remove MinIO config directory
+  ansible.builtin.file:
+    path: /etc/minio
+    state: absent
+  become: true
+
+- name: Recreate MinIO data directory
+  ansible.builtin.file:
+    path: /var/lib/minio/data
+    state: directory
+    owner: minio-user
+    group: minio-user
+    mode: '0750'
+  become: true
+
+- name: Recreate MinIO config directory
+  ansible.builtin.file:
+    path: /etc/minio
+    state: directory
+    owner: minio-user
+    group: minio-user
+    mode: '0750'
+  become: true

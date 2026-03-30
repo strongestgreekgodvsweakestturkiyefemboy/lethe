@@ -5,13 +5,37 @@ import { startImport, streamJobStatus } from './controllers/importController';
 import { updateJob } from './controllers/internalController';
 import { exportItems } from './controllers/exportController';
 import { startPeerImport } from './controllers/peerController';
+import { getDiscordGuilds, getDiscordGuildChannels } from './controllers/discordController';
+import { listDiscordServers, getDiscordServer } from './controllers/discordServerController';
+import { listChannelMessages, listUserMessages } from './controllers/discordMessagesController';
 import { listItems, presignFile, listCreators, listPosts, getPost, getCreatorByExternalId, getPostByExternalId } from './controllers/itemsController';
-import { login, me } from './controllers/authController';
+import { login, me, changePassword } from './controllers/authController';
 import {
   listLatestUsers, getPreferences, updatePreferences,
   listFavorites, addFavorite, removeFavorite,
-  getFeed, listLatestPosts, searchPosts, searchUsers,
+  getFeed, listLatestPosts, searchPosts,
 } from './controllers/usersController';
+import {
+  listTags, createTag, deleteTag,
+  replacePostTags,
+  listAdminPosts, editPost, deletePost, deleteCreator,
+  listAdminJobs, forceReimport,
+  setChannelVisibility, listServerChannels,
+  getBranding, updateBranding, getPublicBranding,
+  listImporterSettings, updateImporterSetting, getPublicImporterSettings,
+} from './controllers/adminController';
+import {
+  addUserPostTag, removeUserPostTag,
+  addUserCreatorTag, removeUserCreatorTag, listCreatorTags,
+  addUserDiscordServerTag, removeUserDiscordServerTag, listDiscordServerTags,
+} from './controllers/tagsController';
+import {
+  listPublicCreators,
+  getPublicCreator,
+  listPublicPosts,
+  getPublicPost,
+  listPublicLatestPosts,
+} from './controllers/publicController';
 import logger from './utils/logger';
 
 // Catch any promise rejection or exception that escapes route handlers so the
@@ -53,6 +77,15 @@ app.post('/api/v1/imports/start', startImport);
 app.get('/api/v1/imports/:jobId/stream', streamJobStatus);
 app.post('/api/v1/imports/peer', startPeerImport);
 app.get('/api/v1/export/items', exportItems);
+// Discord server/channel discovery proxy
+app.post('/api/v1/discord/guilds', getDiscordGuilds);
+app.post('/api/v1/discord/guilds/:guildId/channels', getDiscordGuildChannels);
+// Discord archived server data
+app.get('/api/v1/discord/servers', listDiscordServers);
+app.get('/api/v1/discord/servers/:serverId', getDiscordServer);
+// Discord native message API (new Discord-specific models)
+app.get('/api/v1/discord/servers/:serverId/channels/:channelId/messages', listChannelMessages);
+app.get('/api/v1/discord/users/:discordUserId/messages', listUserMessages);
 app.get('/api/v1/items', listItems);
 app.get('/api/v1/files/presign', presignFile);
 app.get('/api/v1/creators', listCreators);
@@ -62,6 +95,7 @@ app.get('/api/v1/posts/:postId', getPost);
 // Auth
 app.post('/api/v1/auth/login', login);
 app.get('/api/v1/auth/me', me);
+app.patch('/api/v1/auth/password', changePassword);
 // Users & social
 app.get('/api/v1/users', listLatestUsers);
 app.get('/api/v1/users/preferences', getPreferences);
@@ -72,7 +106,46 @@ app.delete('/api/v1/favorites/:creatorId', removeFavorite);
 app.get('/api/v1/feed', getFeed);
 // Search
 app.get('/api/v1/search/posts', searchPosts);
-app.get('/api/v1/search/users', searchUsers);
+// Users are not publicly searchable — endpoint removed
+// app.get('/api/v1/search/users', searchUsers);
+// Tags (read — any authenticated or unauthenticated user)
+app.get('/api/v1/tags', listTags);
+// User-defined tags on posts (logged-in users)
+app.post('/api/v1/posts/:postId/tags', addUserPostTag);
+app.delete('/api/v1/posts/:postId/tags/:tagId', removeUserPostTag);
+// User-defined tags on creators (logged-in users)
+app.get('/api/v1/creators/:creatorId/tags', listCreatorTags);
+app.post('/api/v1/creators/:creatorId/tags', addUserCreatorTag);
+app.delete('/api/v1/creators/:creatorId/tags/:tagId', removeUserCreatorTag);
+// User-defined tags on Discord servers (logged-in users)
+app.get('/api/v1/discord/servers/:serverId/tags', listDiscordServerTags);
+app.post('/api/v1/discord/servers/:serverId/tags', addUserDiscordServerTag);
+app.delete('/api/v1/discord/servers/:serverId/tags/:tagId', removeUserDiscordServerTag);
+// Public branding (no auth required)
+app.get('/api/v1/branding', getPublicBranding);
+// Admin endpoints
+app.get('/api/v1/admin/posts', listAdminPosts);
+app.post('/api/v1/admin/tags', createTag);
+app.delete('/api/v1/admin/tags/:tagId', deleteTag);
+app.put('/api/v1/admin/posts/:postId/tags', replacePostTags);
+app.patch('/api/v1/admin/posts/:postId', editPost);
+app.delete('/api/v1/admin/posts/:postId', deletePost);
+app.delete('/api/v1/admin/creators/:creatorId', deleteCreator);
+app.get('/api/v1/admin/jobs', listAdminJobs);
+app.post('/api/v1/admin/jobs/:jobId/reimport', forceReimport);
+app.patch('/api/v1/admin/channels/:channelId/visibility', setChannelVisibility);
+app.get('/api/v1/admin/discord/servers/:serverId/channels', listServerChannels);
+app.get('/api/v1/admin/branding', getBranding);
+app.put('/api/v1/admin/branding', updateBranding);
+app.get('/api/v1/admin/importers', listImporterSettings);
+app.patch('/api/v1/admin/importers/:importerId', updateImporterSetting);
+// Public read-only API — no authentication required
+app.get('/api/v1/importers', getPublicImporterSettings);
+app.get('/api/v1/creators.json', listPublicCreators);
+app.get('/api/v1/posts/latest.json', listPublicLatestPosts);
+app.get('/api/v1/creators/:service/:creatorExternalId', getPublicCreator);
+app.get('/api/v1/creators/:service/:creatorExternalId/posts', listPublicPosts);
+app.get('/api/v1/creators/:service/:creatorExternalId/post/:postExternalId', getPublicPost);
 // Semantic URL routes: /:serviceType/user/:creatorExternalId[/post/:postExternalId]
 app.get('/api/v1/:serviceType/user/:creatorExternalId/post/:postExternalId', getPostByExternalId);
 app.get('/api/v1/:serviceType/user/:creatorExternalId', getCreatorByExternalId);

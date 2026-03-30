@@ -1,0 +1,13 @@
+---
+# roles/promtail/handlers/main.yml
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+  become: true
+
+- name: Restart Promtail
+  ansible.builtin.service:
+    name: promtail
+    state: restarted
+  become: true

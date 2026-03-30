@@ -261,59 +261,66 @@ class FantiaScraper(BaseScraper):
                 )
 
                 for idx, pid in enumerate(post_ids):
-                    detail = await self._fetch_post_detail(client, pid, headers)
-                    if not detail:
-                        continue
+                    try:
+                        detail = await self._fetch_post_detail(client, pid, headers)
+                        if not detail:
+                            continue
 
-                    title = detail.get("title") or ""
-                    content_raw = detail.get("comment") or detail.get("body") or ""
-                    published_at = detail.get("posted_at")
+                        title = detail.get("title") or ""
+                        content_raw = detail.get("comment") or detail.get("body") or ""
+                        published_at = detail.get("posted_at")
 
-                    attachments: list[ScrapedAttachment] = []
-                    for pc in detail.get("post_contents") or []:
-                        # Photos inside a post content block
-                        for photo in pc.get("post_content_photos") or []:
-                            url = photo.get("url") or photo.get("original_url")
-                            if url:
-                                att = await self._stream(url, headers)
+                        attachments: list[ScrapedAttachment] = []
+                        for pc in detail.get("post_contents") or []:
+                            # Photos inside a post content block
+                            for photo in pc.get("post_content_photos") or []:
+                                url = photo.get("url") or photo.get("original_url")
+                                if url:
+                                    att = await self._stream(url, headers)
+                                    if att:
+                                        att.data_type = "IMAGE"
+                                        attachments.append(att)
+                            # File download link
+                            file_url = pc.get("download_uri") or pc.get("file_url") or pc.get("attachment_uri")
+                            if file_url:
+                                att = await self._stream(file_url, headers, pc.get("filename"))
                                 if att:
-                                    att.data_type = "IMAGE"
                                     attachments.append(att)
-                        # File download link
-                        file_url = pc.get("download_uri") or pc.get("file_url") or pc.get("attachment_uri")
-                        if file_url:
-                            att = await self._stream(file_url, headers, pc.get("filename"))
-                            if att:
-                                attachments.append(att)
 
-                    # Comments
-                    comments: list[ScrapedComment] = []
-                    for c in detail.get("comments") or []:
-                        ci = str(c.get("id") or "")
-                        if ci:
-                            comments.append(
-                                ScrapedComment(
-                                    external_id=ci,
-                                    content=c.get("comment") or c.get("body") or "",
-                                    author_name=(c.get("member") or c.get("user") or {}).get("name"),
-                                    published_at=c.get("created_at"),
+                        # Comments
+                        comments: list[ScrapedComment] = []
+                        for c in detail.get("comments") or []:
+                            ci = str(c.get("id") or "")
+                            if ci:
+                                comments.append(
+                                    ScrapedComment(
+                                        external_id=ci,
+                                        content=c.get("comment") or c.get("body") or "",
+                                        author_name=(c.get("member") or c.get("user") or {}).get("name"),
+                                        published_at=c.get("created_at"),
+                                    )
                                 )
-                            )
 
-                    post = ScrapedPost(
-                        external_id=pid,
-                        creator_external_id=fcid,
-                        service_type="fantia",
-                        title=title or None,
-                        content=content_raw or None,
-                        published_at=published_at,
-                        attachments=attachments,
-                        comments=comments,
-                        creator_name=creator_name or None,
-                        creator_thumbnail_url=thumbnail_url,
-                        creator_banner_url=banner_url,
-                    )
-                    all_posts.append(post)
+                        post = ScrapedPost(
+                            external_id=pid,
+                            creator_external_id=fcid,
+                            service_type="fantia",
+                            title=title or None,
+                            content=content_raw or None,
+                            published_at=published_at,
+                            attachments=attachments,
+                            comments=comments,
+                            creator_name=creator_name or None,
+                            creator_thumbnail_url=thumbnail_url,
+                            creator_banner_url=banner_url,
+                        )
+                        all_posts.append(post)
+                    except Exception as exc:
+                        self.logger.warning(
+                            "Failed to process Fantia post — skipping",
+                            extra={"job_id": self.job_id, "post_id": pid, "fanclub_id": fcid, "error": str(exc)},
+                        )
+                        continue
 
                     overall_progress = int(
                         (fc_idx / n_fanclubs + (idx + 1) / (total * n_fanclubs)) * 100

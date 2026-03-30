@@ -4,10 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 
-const BACKEND_URL =
-  typeof window !== 'undefined'
-    ? (process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001')
-    : 'http://localhost:3001';
+const BACKEND_URL = '';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -63,6 +60,7 @@ interface PostDetail {
   revisions: PostRevision[];
   attachments: PostAttachment[];
   comments: Comment[];
+  tags: { tag: { id: string; name: string } }[];
 }
 
 interface PostListItem {
@@ -121,7 +119,7 @@ function AttachmentViewer({ attachment }: { attachment: PostAttachment }) {
 
   if (error) {
     return (
-      <div className="bg-gray-800 rounded-xl p-4 text-center text-gray-500 text-sm">
+      <div className="user-card rounded-xl p-4 text-center text-sm" style={{ opacity: 0.5 }}>
         Media unavailable
       </div>
     );
@@ -129,7 +127,7 @@ function AttachmentViewer({ attachment }: { attachment: PostAttachment }) {
 
   if (!url) {
     return (
-      <div className="bg-gray-800 rounded-xl p-4 flex items-center justify-center text-gray-600 text-sm aspect-video animate-pulse">
+      <div className="user-card rounded-xl p-4 flex items-center justify-center text-sm aspect-video animate-pulse" style={{ opacity: 0.4 }}>
         Loading…
       </div>
     );
@@ -153,7 +151,7 @@ function AttachmentViewer({ attachment }: { attachment: PostAttachment }) {
 
   if (attachment.dataType === 'AUDIO') {
     return (
-      <div className="bg-gray-800 rounded-xl p-4">
+      <div className="user-card rounded-xl p-4">
         <audio controls className="w-full">
           <source src={url} />
           Your browser does not support audio playback.
@@ -164,15 +162,15 @@ function AttachmentViewer({ attachment }: { attachment: PostAttachment }) {
   }
 
   return (
-    <div className="bg-gray-800 rounded-xl p-4 flex items-center gap-3">
+    <div className="user-card rounded-xl p-4 flex items-center gap-3">
       <span className="text-2xl">📄</span>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-200 truncate">{filename}</p>
+        <p className="text-sm font-medium truncate">{filename}</p>
       </div>
       <a
         href={url}
         download={filename}
-        className="shrink-0 bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-medium rounded-lg px-3 py-1.5 transition-colors"
+        className="shrink-0 user-btn text-xs font-medium rounded-lg px-3 py-1.5"
       >
         Download
       </a>
@@ -218,7 +216,8 @@ function PostContent({ html }: { html: string }) {
 
   return (
     <div
-      className="prose prose-invert max-w-none text-gray-200 prose-img:rounded-xl prose-img:max-h-[600px] prose-img:object-cover"
+      className="prose prose-invert max-w-none prose-img:rounded-xl prose-img:max-h-[600px] prose-img:object-cover user-content-area rounded-xl p-4"
+      style={{ color: 'var(--user-content-text-color)', fontFamily: 'var(--user-content-font-family)', fontSize: 'var(--user-content-font-size)' }}
       // eslint-disable-next-line react/no-danger
       dangerouslySetInnerHTML={{ __html: processedHtml }}
     />
@@ -262,8 +261,8 @@ function PostSidebar({
                 href={`/${service}/user/${creatorId}/post/${p.externalId}`}
                 className={`block px-4 py-2.5 text-sm transition-colors line-clamp-2 ${
                   isActive
-                    ? 'bg-indigo-900/50 text-indigo-300 font-medium'
-                    : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
+                    ? 'user-sidebar-active font-medium'
+                    : 'opacity-60 hover:user-sidebar-active'
                 }`}
               >
                 {title}
@@ -298,8 +297,11 @@ export default function PostSemanticDetailPage() {
   // Revision selector — index into post.revisions
   const [selectedRevisionIdx, setSelectedRevisionIdx] = useState(0);
 
-  // Sidebar
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Sidebar — closed by default on mobile, open on desktop
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth >= 1024;
+  });
   const [allPosts, setAllPosts] = useState<PostListItem[]>([]);
   const allPostsLoadedRef = useRef(false);
 
@@ -355,7 +357,7 @@ export default function PostSemanticDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-[calc(100vh-3rem)] bg-gray-950 text-white flex items-center justify-center">
+      <div className="min-h-[calc(100vh-3rem)] user-bg flex items-center justify-center">
         Loading…
       </div>
     );
@@ -363,7 +365,7 @@ export default function PostSemanticDetailPage() {
 
   if (error || !post) {
     return (
-      <div className="min-h-[calc(100vh-3rem)] bg-gray-950 text-white flex items-center justify-center">
+      <div className="min-h-[calc(100vh-3rem)] user-bg flex items-center justify-center">
         <p className="text-red-400">{error ?? 'Post not found'}</p>
       </div>
     );
@@ -372,7 +374,7 @@ export default function PostSemanticDetailPage() {
   const selectedRevision = post.revisions[selectedRevisionIdx];
 
   return (
-    <div className="min-h-[calc(100vh-3rem)] bg-gray-950 text-white">
+    <div className="min-h-[calc(100vh-3rem)] user-bg">
       <div className="max-w-7xl mx-auto px-4 py-6 flex gap-6">
         {/* Sidebar */}
         {sidebarOpen && (
@@ -391,7 +393,7 @@ export default function PostSemanticDetailPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={handleSidebarToggle}
-              className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors text-gray-400 hover:text-white"
+              className="p-2 rounded-lg user-card transition-colors"
               aria-label="Toggle post list"
               title="Browse all posts"
             >
@@ -415,16 +417,14 @@ export default function PostSemanticDetailPage() {
                 <button
                   disabled={!prevPost}
                   onClick={() => prevPost && navigate(prevPost.externalId)}
-                  className="px-3 py-1.5 rounded-lg text-sm bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  title="Previous post"
+                  className="px-3 py-1.5 rounded-lg text-sm user-card disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   ‹ Prev
                 </button>
                 <button
                   disabled={!nextPost}
                   onClick={() => nextPost && navigate(nextPost.externalId)}
-                  className="px-3 py-1.5 rounded-lg text-sm bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  title="Next post"
+                  className="px-3 py-1.5 rounded-lg text-sm user-card disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   Next ›
                 </button>
@@ -477,6 +477,15 @@ export default function PostSemanticDetailPage() {
                 <div className="text-xs text-gray-500">
                   {post.creator.name ?? post.creator.externalId} · {post.creator.serviceType} · {post.creator.sourceSite}
                 </div>
+                {post.tags && post.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {post.tags.map((pt) => (
+                      <span key={pt.tag.id} className="text-xs bg-indigo-900/50 text-indigo-300 px-2 py-0.5 rounded-full">
+                        {pt.tag.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -567,6 +567,17 @@ class PatreonScraper(BaseScraper):
 
         attachments: list[ScrapedAttachment] = []
 
+        # Build a set of media IDs that appear in images/audio/attachments_media
+        # so we can detect embedded content-only images separately.
+        explicit_media_ids: set[str] = set()
+        for rel_key in ("images", "audio", "attachments_media"):
+            rel_data = (rels.get(rel_key) or {}).get("data")
+            if not rel_data:
+                continue
+            refs = rel_data if isinstance(rel_data, list) else [rel_data]
+            for ref in refs:
+                explicit_media_ids.add(str(ref.get("id", "")))
+
         # Process images.
         for media_obj in _resolve_refs("images"):
             media_attrs = media_obj.get("attributes") or {}
@@ -626,6 +637,41 @@ class PatreonScraper(BaseScraper):
                     "Failed to stream attachment, skipping",
                     extra={"job_id": self.job_id, "post_id": post_id, "error": str(exc)},
                 )
+
+        # Extract images embedded in post content (content_json_string image nodes)
+        # that are NOT already captured by the images relationship above.
+        if content:
+            img_srcs = re.findall(
+                r'<img[^>]*\sdata-media-id="([^"]*)"[^>]*\ssrc="([^"]*)"',
+                content,
+            ) + re.findall(
+                r'<img[^>]*\ssrc="([^"]*)"[^>]*(?:data-media-id="[^"]*")?',
+                content,
+            )
+            # Use a simpler regex to capture all img src + optional media-id pairs
+            embedded_imgs = re.findall(
+                r'<img(?:[^>]*?\sdata-media-id="([^"]*)")?[^>]*?\ssrc="([^"]+)"',
+                content,
+            )
+            for media_id, src in embedded_imgs:
+                # Skip if already captured as an explicit attachment
+                if media_id and media_id in explicit_media_ids:
+                    continue
+                if not src or src.startswith("data:"):
+                    continue
+                try:
+                    att = await self._stream_media(
+                        src,
+                        src.split("/")[-1].split("?")[0] or "embedded_image",
+                        "image",
+                        headers,
+                    )
+                    attachments.append(att)
+                except Exception as exc:
+                    self.logger.warning(
+                        "Failed to stream embedded content image, skipping",
+                        extra={"job_id": self.job_id, "post_id": post_id, "src": src, "error": str(exc)},
+                    )
 
         return ScrapedPost(
             external_id=post_id,

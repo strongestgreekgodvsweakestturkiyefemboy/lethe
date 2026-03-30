@@ -3,15 +3,14 @@ Description=MinIO Object Storage
 Documentation=https://docs.min.io
 Wants=network-online.target
 After=network-online.target
+AssertPathExists=/var/lib/minio/data
 
 [Service]
 User=minio-user
 Group=minio-user
 EnvironmentFile=/etc/minio/minio.env
-ExecStart=/usr/local/bin/minio server $MINIO_VOLUMES $MINIO_OPTS
-Restart=always
-RestartSec=5
-LimitNOFILE=65536
+# MinIO automatically picks up $MINIO_VOLUMES and $MINIO_OPTS from the env file
+ExecStart=/usr/local/bin/minio server
 
 [Install]
 WantedBy=multi-user.target

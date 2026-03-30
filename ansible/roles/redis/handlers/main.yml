@@ -3,6 +3,6 @@
 
 - name: Restart Redis
   ansible.builtin.service:
-    name: redis-server
+    name: "{{ redis_service_name }}"
     state: restarted
   become: true

@@ -76,6 +76,9 @@ def _serialize_post(post: ScrapedPost) -> dict:
         "creatorName": post.creator_name,
         "creatorThumbnailUrl": post.creator_thumbnail_url,
         "creatorBannerUrl": post.creator_banner_url,
+        "discordAuthorId": post.discord_author_id,
+        "discordGuildId": post.discord_guild_id,
+        "discordAuthorInfo": post.discord_author_info,
         "attachments": [
             {
                 "fileUrl": att.file_url,
@@ -102,6 +105,7 @@ def _serialize_post(post: ScrapedPost) -> dict:
             }
             for r in post.historical_revisions
         ],
+        "tags": post.tags,
     }
 
 
@@ -112,6 +116,7 @@ async def _post_update(
     new_items: list[dict] | None = None,
     new_posts: list[dict] | None = None,
     log_message: str | None = None,
+    discord_server_info: dict | None = None,
 ) -> None:
     payload: dict = {"status": status, "progressPct": progress_pct}
     if new_items:
@@ -120,6 +125,8 @@ async def _post_update(
         payload["newPosts"] = new_posts
     if log_message:
         payload["logMessage"] = log_message
+    if discord_server_info:
+        payload["discordServerInfo"] = discord_server_info
     logger.debug(
         "Posting job update to backend",
         extra={
@@ -151,6 +158,7 @@ def _make_flush_callback(job_id: str) -> FlushCallback:
         items: list[ScrapedItem],
         progress_pct: int,
         log_message: str | None = None,
+        discord_server_info: dict | None = None,
     ) -> None:
         serialized_posts = [_serialize_post(p) for p in posts] or None
         serialized_items = [_serialize_item(i) for i in items] or None
@@ -161,6 +169,7 @@ def _make_flush_callback(job_id: str) -> FlushCallback:
             serialized_items,
             serialized_posts,
             log_message,
+            discord_server_info,
         )
 
     return _flush
@@ -252,6 +261,7 @@ async def process_import(job: Job, job_token: str) -> None:
             await _post_update(
                 job_id, "FAILED", result.progress_pct,
                 remaining_items, remaining_posts,
+                discord_server_info=result.discord_server_info,
             )
         else:
             logger.info(
@@ -265,6 +275,7 @@ async def process_import(job: Job, job_token: str) -> None:
             await _post_update(
                 job_id, "COMPLETED", 100,
                 remaining_items, remaining_posts,
+                discord_server_info=result.discord_server_info,
             )
     except Exception as exc:
         status = "FAILED_RATE_LIMIT" if "rate limit" in str(exc).lower() else "FAILED"

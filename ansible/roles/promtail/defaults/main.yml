@@ -1,0 +1,4 @@
+---
+# roles/promtail/defaults/main.yml
+promtail_version: "3.0.0"
+promtail_port: 9080

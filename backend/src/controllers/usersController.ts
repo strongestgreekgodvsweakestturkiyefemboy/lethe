@@ -61,7 +61,7 @@ export async function getPreferences(req: Request, res: Response, next: NextFunc
 
   try {
     const prefs = await prisma.userPreferences.findUnique({ where: { userId } });
-    res.json({ preferences: prefs ?? { fontSize: 14, fontFamily: 'sans-serif', bgColor: '#030712', fontColor: '#ffffff' } });
+    res.json({ preferences: prefs ?? null });
   } catch (err) {
     next(err);
   }
@@ -70,17 +70,22 @@ export async function getPreferences(req: Request, res: Response, next: NextFunc
 /**
  * PUT /api/v1/users/preferences   (requires auth)
  *
- * Body: { fontSize?, fontFamily?, bgColor?, fontColor? }
+ * Body: { fontSize?, fontFamily?, bgColor?, fontColor?, accentColor?, contentBgColor?, contentTextColor?, contentFontFamily?, contentFontSize? }
  */
 export async function updatePreferences(req: Request, res: Response, next: NextFunction): Promise<void> {
   const userId = getUserId(req);
   if (!userId) { res.status(401).json({ error: 'Unauthorized' }); return; }
 
-  const { fontSize, fontFamily, bgColor, fontColor } = req.body as {
+  const { fontSize, fontFamily, bgColor, fontColor, accentColor, contentBgColor, contentTextColor, contentFontFamily, contentFontSize } = req.body as {
     fontSize?: number;
     fontFamily?: string;
     bgColor?: string;
     fontColor?: string;
+    accentColor?: string;
+    contentBgColor?: string;
+    contentTextColor?: string;
+    contentFontFamily?: string;
+    contentFontSize?: number;
   };
 
   try {
@@ -91,6 +96,11 @@ export async function updatePreferences(req: Request, res: Response, next: NextF
         ...(fontFamily ? { fontFamily } : {}),
         ...(bgColor ? { bgColor } : {}),
         ...(fontColor ? { fontColor } : {}),
+        ...(accentColor ? { accentColor } : {}),
+        ...(contentBgColor ? { contentBgColor } : {}),
+        ...(contentTextColor ? { contentTextColor } : {}),
+        ...(contentFontFamily ? { contentFontFamily } : {}),
+        ...(contentFontSize != null ? { contentFontSize } : {}),
       },
       create: {
         userId,
@@ -98,6 +108,11 @@ export async function updatePreferences(req: Request, res: Response, next: NextF
         fontFamily: fontFamily ?? 'sans-serif',
         bgColor: bgColor ?? '#030712',
         fontColor: fontColor ?? '#ffffff',
+        accentColor: accentColor ?? '#111827',
+        contentBgColor: contentBgColor ?? '#1f2937',
+        contentTextColor: contentTextColor ?? '#e5e7eb',
+        contentFontFamily: contentFontFamily ?? 'sans-serif',
+        contentFontSize: contentFontSize ?? 14,
       },
     });
     res.json({ preferences: prefs });
@@ -234,6 +249,7 @@ export async function listLatestPosts(req: Request, res: Response, next: NextFun
 
   try {
     const posts = await prisma.post.findMany({
+      where: { creator: { NOT: { serviceType: 'discord' } } },
       orderBy: { createdAt: 'desc' },
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),

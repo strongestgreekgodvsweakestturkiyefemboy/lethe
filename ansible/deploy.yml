@@ -1,14 +1,41 @@
 ---
 # ansible/deploy.yml
 # Deploy/redeploy application code only.
-# Assumes Postgres, Redis, and MinIO are already running.
+# Assumes all infrastructure services (Postgres, Valkey, MinIO) are running.
 # Run: ansible-playbook -i inventory/hosts.ini deploy.yml
 
-- name: Deploy Lethe application
-  hosts: lethe
+- name: Deploy backend API
+  hosts: backend
   gather_facts: true
-
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
   roles:
     - role: backend
+
+- name: Deploy importer workers
+  hosts: importers
+  gather_facts: true
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+  roles:
     - role: importers
+
+- name: Deploy frontend
+  hosts: frontend
+  gather_facts: true
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+  roles:
     - role: frontend
+
+- name: Redeploy Nginx config on lb tier
+  hosts: lb
+  gather_facts: true
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+  roles:
+    - role: nginx

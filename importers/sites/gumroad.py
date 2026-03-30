@@ -261,51 +261,58 @@ class GumroadScraper(BaseScraper):
                 if not pid:
                     continue
 
-                creator_name = (
-                    product.get("creator_name")
-                    or (product.get("seller") or {}).get("name")
-                    or creator
-                    or ""
-                )
-                creator_ext_id = str(
-                    (product.get("seller") or {}).get("id") or creator or ""
-                )
-                title = product.get("name") or product.get("product_name") or ""
-                description = product.get("description") or product.get("long_description") or ""
-                published_at = (
-                    product.get("published_at")
-                    or product.get("created_at")
-                )
-                thumbnail_url = product.get("thumbnail_url")
+                try:
+                    creator_name = (
+                        product.get("creator_name")
+                        or (product.get("seller") or {}).get("name")
+                        or creator
+                        or ""
+                    )
+                    creator_ext_id = str(
+                        (product.get("seller") or {}).get("id") or creator or ""
+                    )
+                    title = product.get("name") or product.get("product_name") or ""
+                    description = product.get("description") or product.get("long_description") or ""
+                    published_at = (
+                        product.get("published_at")
+                        or product.get("created_at")
+                    )
+                    thumbnail_url = product.get("thumbnail_url")
 
-                attachments: list[ScrapedAttachment] = []
+                    attachments: list[ScrapedAttachment] = []
 
-                # Stream thumbnail if present
-                if thumbnail_url:
-                    att = await self._stream(thumbnail_url, headers, "thumbnail.jpg")
-                    if att:
-                        att.data_type = "IMAGE"
-                        attachments.append(att)
+                    # Stream thumbnail if present
+                    if thumbnail_url:
+                        att = await self._stream(thumbnail_url, headers, "thumbnail.jpg")
+                        if att:
+                            att.data_type = "IMAGE"
+                            attachments.append(att)
 
-                # Stream any preview files
-                preview_url = product.get("preview_url")
-                for preview in ([preview_url] if preview_url else []):
-                    att = await self._stream(preview, headers)
-                    if att:
-                        attachments.append(att)
+                    # Stream any preview files
+                    preview_url = product.get("preview_url")
+                    for preview in ([preview_url] if preview_url else []):
+                        att = await self._stream(preview, headers)
+                        if att:
+                            attachments.append(att)
 
-                post = ScrapedPost(
-                    external_id=pid,
-                    creator_external_id=creator_ext_id,
-                    service_type="gumroad",
-                    title=title,
-                    content=f"<p>{description}</p>" if description else None,
-                    published_at=published_at,
-                    attachments=attachments,
-                    creator_name=creator_name or None,
-                    creator_thumbnail_url=None,
-                )
-                all_posts.append(post)
+                    post = ScrapedPost(
+                        external_id=pid,
+                        creator_external_id=creator_ext_id,
+                        service_type="gumroad",
+                        title=title,
+                        content=f"<p>{description}</p>" if description else None,
+                        published_at=published_at,
+                        attachments=attachments,
+                        creator_name=creator_name or None,
+                        creator_thumbnail_url=None,
+                    )
+                    all_posts.append(post)
+                except Exception as exc:
+                    self.logger.warning(
+                        "Failed to process Gumroad product — skipping",
+                        extra={"job_id": self.job_id, "product_id": pid, "error": str(exc)},
+                    )
+                    continue
 
                 progress = int((idx + 1) / total * 100)
                 if self.flush_callback and (idx + 1) % 5 == 0:

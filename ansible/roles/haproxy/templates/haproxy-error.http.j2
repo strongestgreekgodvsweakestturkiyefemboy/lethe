@@ -1,0 +1,13 @@
+HTTP/1.0 {{ item.code }} {{ item.text }}
+Cache-Control: no-cache
+Connection: close
+Content-Type: text/html
+
+<!DOCTYPE html>
+<html>
+<head><title>{{ item.code }} {{ item.text }}</title></head>
+<body>
+<h1>{{ item.code }} {{ item.text }}</h1>
+<p>The service is temporarily unavailable. Please try again later.</p>
+</body>
+</html>

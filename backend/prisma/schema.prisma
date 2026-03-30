@@ -24,17 +24,22 @@ enum DataType {
 }
 
 model User {
-  id           String           @id @default(cuid())
-  username     String?          @unique
-  passwordHash String?
-  email        String?          @unique
-  jobs         Job[]
-  dataItems    DataItem[]
-  creators     Creator[]
-  favorites    UserFavorite[]
-  preferences  UserPreferences?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  id                  String                @id @default(cuid())
+  username            String?               @unique
+  passwordHash        String?
+  email               String?               @unique
+  isAdmin             Boolean               @default(false)
+  jobs                Job[]
+  dataItems           DataItem[]
+  creators            Creator[]
+  favorites           UserFavorite[]
+  preferences         UserPreferences?
+  discordServers      DiscordServer[]
+  userPostTags        UserPostTag[]
+  userCreatorTags     UserCreatorTag[]
+  userDiscordServerTags UserDiscordServerTag[]
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
 }
 
 model UserFavorite {
@@ -49,27 +54,56 @@ model UserFavorite {
 }
 
 model UserPreferences {
-  id         String   @id @default(cuid())
-  userId     String   @unique
-  user       User     @relation(fields: [userId], references: [id])
-  fontSize   Int      @default(14)
-  fontFamily String   @default("sans-serif")
-  bgColor    String   @default("#030712")
-  fontColor  String   @default("#ffffff")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id])
+  fontSize          Int      @default(14)
+  fontFamily        String   @default("sans-serif")
+  bgColor           String   @default("#030712")
+  fontColor         String   @default("#ffffff")
+  accentColor       String   @default("#111827")
+  contentBgColor    String   @default("#1f2937")
+  contentTextColor  String   @default("#e5e7eb")
+  contentFontFamily String   @default("sans-serif")
+  contentFontSize   Int      @default(14)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 model Job {
-  id           String    @id @default(cuid())
-  userId       String
-  user         User      @relation(fields: [userId], references: [id])
-  targetSite   String
-  status       JobStatus @default(PENDING)
-  progressPct  Int       @default(0)
-  errorMessage String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                 String    @id @default(cuid())
+  userId             String
+  user               User      @relation(fields: [userId], references: [id])
+  targetSite         String
+  creatorExternalId  String?   // optional: creator/channel being imported (for throttle)
+  status             JobStatus @default(PENDING)
+  progressPct        Int       @default(0)
+  errorMessage       String?
+  /// When true the user opted-in to storing their encrypted session token
+  /// so the import can be re-triggered automatically.
+  saveSession        Boolean   @default(false)
+  /// AES-256-GCM encrypted session token (set only when saveSession=true).
+  savedToken         String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+/// A row per importer that admins can use to enable or disable it.
+/// If no row exists for an importer key the importer defaults to enabled.
+
+model ImporterSetting {
+  id        String   @id   // importer key, e.g. "kemono"
+  enabled   Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+}
+model SiteBranding {
+  id          String   @id @default("singleton")
+  siteName    String   @default("Lethe")
+  siteTagline String   @default("Self-hosted data archival service")
+  accentColor String   @default("#6366f1")
+  logoUrl     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model DataItem {
@@ -91,19 +125,23 @@ model DataItem {
 
 /// A creator on a source platform (e.g. a Patreon creator imported via Kemono).
 model Creator {
-  id           String         @id @default(cuid())
-  userId       String
-  user         User           @relation(fields: [userId], references: [id])
-  sourceSite   String         // importer name, e.g. "kemono" or "patreon"
-  serviceType  String         // platform name, e.g. "patreon", "fanbox"
-  externalId   String         // creator ID on the source platform
-  name         String?
-  thumbnailUrl String?        // avatar S3 key (or external URL fallback)
-  bannerUrl    String?        // banner/header S3 key
-  posts        Post[]
-  favorites    UserFavorite[]
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id              String           @id @default(cuid())
+  userId          String
+  user            User             @relation(fields: [userId], references: [id])
+  sourceSite      String           // importer name, e.g. "kemono" or "patreon"
+  serviceType     String           // platform name, e.g. "patreon", "fanbox"
+  externalId      String           // creator ID on the source platform
+  name            String?
+  thumbnailUrl    String?          // avatar S3 key (or external URL fallback)
+  bannerUrl       String?          // banner/header S3 key
+  posts           Post[]
+  favorites       UserFavorite[]
+  discordServerId String?          // FK to DiscordServer when serviceType="discord"
+  discordServer   DiscordServer?   @relation("DiscordServerCreators", fields: [discordServerId], references: [id])
+  discordChannels DiscordChannel[] @relation("DiscordChannelCreator")
+  userTags        UserCreatorTag[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   // Keyed by (userId, serviceType, externalId) so that the same creator
   // imported from multiple sources (e.g. kemono AND patreon directly) maps
@@ -115,16 +153,19 @@ model Creator {
 /// Title and content are stored in PostRevision — always read the revision
 /// with the highest id for the current title/content.
 model Post {
-  id          String          @id @default(cuid())
-  creatorId   String
-  creator     Creator         @relation(fields: [creatorId], references: [id])
-  externalId  String          // post ID on the source platform
-  publishedAt DateTime?
-  attachments PostAttachment[]
-  comments    Comment[]
-  revisions   PostRevision[]
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id              String          @id @default(cuid())
+  creatorId       String
+  creator         Creator         @relation(fields: [creatorId], references: [id])
+  externalId      String          // post ID on the source platform
+  publishedAt     DateTime?
+  discordAuthorId String?         // Discord user snowflake for global user tracking
+  attachments     PostAttachment[]
+  comments        Comment[]
+  revisions       PostRevision[]
+  tags            PostTag[]
+  userTags        UserPostTag[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   @@unique([creatorId, externalId])
 }
@@ -181,4 +222,225 @@ model CommentRevision {
   comment   Comment  @relation(fields: [commentId], references: [id])
   content   String
   createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Tags
+// ---------------------------------------------------------------------------
+
+/// A tag that can be applied to posts. Admins manage the tag vocabulary;
+/// scrapers may auto-create tags from imported content.
+model Tag {
+  id             String               @id @default(cuid())
+  name           String               @unique
+  posts          PostTag[]
+  userPostTags   UserPostTag[]
+  userCreatorTags UserCreatorTag[]
+  userDiscordServerTags UserDiscordServerTag[]
+  createdAt      DateTime             @default(now())
+}
+
+/// Many-to-many join between Post and Tag (importer/admin-managed tags).
+model PostTag {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tagId     String
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([postId, tagId])
+}
+
+/// User-added tag on a Post (separate from importer PostTag entries).
+/// Multiple users may each add the same tag; unique per (post, tag, user).
+model UserPostTag {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tagId     String
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([postId, tagId, userId])
+}
+
+/// User-added tag on a Creator.
+model UserCreatorTag {
+  id        String   @id @default(cuid())
+  creatorId String
+  creator   Creator  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  tagId     String
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([creatorId, tagId, userId])
+}
+
+/// User-added tag on a Discord server.
+model UserDiscordServerTag {
+  id        String        @id @default(cuid())
+  serverId  String
+  server    DiscordServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  tagId     String
+  tag       Tag           @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+
+  @@unique([serverId, tagId, userId])
+}
+
+// ---------------------------------------------------------------------------
+// Discord server / role / channel metadata
+// ---------------------------------------------------------------------------
+
+/// A Discord guild (server) whose channels have been imported.
+model DiscordServer {
+  id        String                 @id @default(cuid())
+  userId    String
+  user      User                   @relation(fields: [userId], references: [id])
+  guildId   String                 // Discord guild snowflake
+  name      String
+  iconUrl   String?                // guild icon CDN URL
+  roles     DiscordRole[]
+  channels  DiscordChannel[]
+  creators  Creator[]              @relation("DiscordServerCreators")
+  members   DiscordGuildMember[]
+  userTags  UserDiscordServerTag[]
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  @@unique([userId, guildId])
+}
+
+/// A role within a Discord server, including its display colour.
+model DiscordRole {
+  id        String        @id @default(cuid())
+  serverId  String
+  server    DiscordServer @relation(fields: [serverId], references: [id])
+  roleId    String        // Discord role snowflake
+  name      String
+  color     Int           // Discord colour integer (0 = default / no colour)
+  position  Int           @default(0)
+  createdAt DateTime      @default(now())
+
+  @@unique([serverId, roleId])
+}
+
+/// A channel within a Discord server (text, voice, category, announcement, etc.).
+/// All channel names are stored even when only a subset has been imported.
+model DiscordChannel {
+  id        String           @id @default(cuid())
+  serverId  String
+  server    DiscordServer    @relation(fields: [serverId], references: [id])
+  channelId String           // Discord channel snowflake
+  name      String
+  type      Int              // 0=text, 2=voice, 4=category, 5=announcement
+  parentId  String?          // snowflake of the parent category channel
+  position  Int              @default(0)
+  /// Admins control whether this channel appears in the server view.
+  /// Defaults to false; set true automatically when messages are imported.
+  isVisible Boolean          @default(false)
+  creatorId String?          // FK to Creator once messages are imported (legacy)
+  creator   Creator?         @relation("DiscordChannelCreator", fields: [creatorId], references: [id])
+  messages  DiscordMessage[] @relation("DiscordChannelMessages")
+  threads   DiscordThread[]  @relation("DiscordChannelThreads")
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@unique([serverId, channelId])
+}
+
+// ---------------------------------------------------------------------------
+// Discord-native message / user models
+// ---------------------------------------------------------------------------
+
+/// A Discord user across all guilds.
+model DiscordUser {
+  id          String               @id @default(cuid())
+  discordId   String               @unique  // Discord user snowflake
+  username    String?
+  globalName  String?
+  avatarUrl   String?
+  messages    DiscordMessage[]     @relation("DiscordUserMessages")
+  memberships DiscordGuildMember[]
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+}
+
+/// Junction between DiscordUser and DiscordServer (guild membership).
+model DiscordGuildMember {
+  id        String        @id @default(cuid())
+  guildId   String
+  guild     DiscordServer @relation(fields: [guildId], references: [id])
+  userId    String
+  user      DiscordUser   @relation(fields: [userId], references: [id])
+  nickname  String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@unique([guildId, userId])
+}
+
+/// A thread within a Discord channel (forum post, reply thread, etc.).
+model DiscordThread {
+  id        String           @id @default(cuid())
+  channelId String
+  channel   DiscordChannel   @relation("DiscordChannelThreads", fields: [channelId], references: [id])
+  threadId  String           // Discord thread snowflake
+  name      String
+  ownerId   String?          // Discord user snowflake of the thread owner
+  messages  DiscordMessage[] @relation("DiscordThreadMessages")
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@unique([channelId, threadId])
+}
+
+/// A single message in a Discord channel or thread.
+model DiscordMessage {
+  id          String                   @id @default(cuid())
+  messageId   String                   // Discord message snowflake
+  channelId   String
+  channel     DiscordChannel           @relation("DiscordChannelMessages", fields: [channelId], references: [id])
+  threadId    String?
+  thread      DiscordThread?           @relation("DiscordThreadMessages", fields: [threadId], references: [id])
+  authorId    String?
+  author      DiscordUser?             @relation("DiscordUserMessages", fields: [authorId], references: [id])
+  content     String?
+  publishedAt DateTime?
+  attachments DiscordAttachment[]
+  revisions   DiscordMessageRevision[]
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+
+  @@unique([channelId, messageId])
+}
+
+/// A saved revision of a DiscordMessage (recorded whenever the message is
+/// re-imported with different content, indicating an edit on Discord).
+model DiscordMessageRevision {
+  id        String         @id @default(cuid())
+  messageId String
+  message   DiscordMessage @relation(fields: [messageId], references: [id])
+  content   String?
+  editedAt  DateTime?
+  createdAt DateTime       @default(now())
+}
+
+/// A file attachment on a DiscordMessage, stored in S3.
+model DiscordAttachment {
+  id          String         @id @default(cuid())
+  messageId   String
+  message     DiscordMessage @relation(fields: [messageId], references: [id])
+  fileUrl     String         // S3 object key
+  dataType    DataType
+  name        String?        // original filename
+  originalUrl String?        // original Discord CDN URL (for reference)
+  createdAt   DateTime       @default(now())
 }

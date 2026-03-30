@@ -3,13 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import DiscordChannelView from '@/components/DiscordChannelView';
 import FavoriteButton from '@/components/FavoriteButton';
+import TagsSection from '@/components/TagsSection';
+import { useAuth } from '@/components/AuthContext';
 
-const BACKEND_URL =
-  typeof window !== 'undefined'
-    ? (process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001')
-    : 'http://localhost:3001';
+const BACKEND_URL = '';
 
 interface Creator {
   id: string;
@@ -22,6 +20,7 @@ interface Creator {
   bannerUrl: string | null;
   createdAt: string;
   _count: { posts: number };
+  userTags: { tag: { id: string; name: string }; addedByMe: boolean }[];
 }
 
 interface PostRevisionSummary {
@@ -70,9 +69,9 @@ function CreatorHeader({ creator, displayName }: { creator: Creator; displayName
   }, [creator.thumbnailUrl, creator.bannerUrl]);
 
   return (
-    <div className="rounded-xl overflow-hidden bg-gray-800">
+    <div className="rounded-xl overflow-hidden user-card">
       {/* Banner */}
-      <div className="h-36 bg-gradient-to-br from-gray-700 to-gray-900 relative overflow-hidden">
+      <div className="h-36 relative overflow-hidden" style={{ background: 'linear-gradient(to bottom right, var(--user-card-hover-bg), var(--user-accent-color))' }}>
         {bannerSrc && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={bannerSrc} alt="banner" className="w-full h-full object-cover" />
@@ -86,10 +85,11 @@ function CreatorHeader({ creator, displayName }: { creator: Creator; displayName
             <img
               src={thumbUrl}
               alt={displayName}
-              className="w-20 h-20 rounded-xl object-cover border-4 border-gray-800"
+              className="w-20 h-20 rounded-xl object-cover border-4"
+              style={{ borderColor: 'var(--user-card-bg)' }}
             />
           ) : (
-            <div className="w-20 h-20 rounded-xl bg-gray-600 border-4 border-gray-800 flex items-center justify-center text-gray-300 font-bold text-2xl">
+            <div className="w-20 h-20 rounded-xl user-sidebar-bg border-4 flex items-center justify-center font-bold text-2xl" style={{ borderColor: 'var(--user-card-bg)', opacity: 0.7 }}>
               {initial}
             </div>
           )}
@@ -125,7 +125,7 @@ function PostCard({
   return (
     <Link
       href={`/${serviceType}/user/${creatorExternalId}/post/${post.externalId}`}
-      className="bg-gray-800 rounded-xl p-4 hover:bg-gray-700 transition-colors space-y-2 block"
+      className="user-card rounded-xl p-4 space-y-2 block"
     >
       <p className="font-semibold text-white line-clamp-2">{title}</p>
       {preview && <p className="text-sm text-gray-400 line-clamp-3">{preview}</p>}
@@ -143,6 +143,7 @@ function PostCard({
 
 export default function CreatorSemanticPage() {
   const { service, creatorId } = useParams<{ service: string; creatorId: string }>();
+  const { token } = useAuth();
   const [creator, setCreator] = useState<Creator | null>(null);
   const [posts, setPosts] = useState<PostListItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -157,8 +158,12 @@ export default function CreatorSemanticPage() {
       const params = new URLSearchParams({ limit: '50' });
       if (cursorValue) params.set('cursor', cursorValue);
 
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch(
         `${BACKEND_URL}/api/v1/${service}/user/${creatorId}?${params.toString()}`,
+        { headers },
       );
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = (await res.json()) as {
@@ -181,37 +186,27 @@ export default function CreatorSemanticPage() {
   useEffect(() => {
     loadPage(null, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [service, creatorId]);
+  }, [service, creatorId, token]);
 
   const displayName = creator?.name ?? creatorId;
 
-  // Discord channels get a chat-style view instead of the post grid
-  if (service === 'discord' && (creator || !loading)) {
-    return (
-      <div className="flex flex-col" style={{ height: 'calc(100vh - 3rem)' }}>
-        {creator && (
-          <div className="shrink-0 px-4 pt-4 pb-2 bg-gray-950">
-            <CreatorHeader creator={creator} displayName={displayName} />
-          </div>
-        )}
-        <div className="flex-1 min-h-0">
-          <DiscordChannelView
-            creatorId={creator?.id ?? ''}
-            channelId={creatorId}
-            channelName={creator?.name ?? null}
-          />
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-[calc(100vh-3rem)] bg-gray-950 text-white">
+    <div className="min-h-[calc(100vh-3rem)] user-bg">
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
         {creator ? (
-          <CreatorHeader creator={creator} displayName={displayName} />
+          <>
+            <CreatorHeader creator={creator} displayName={displayName} />
+            {/* Creator tags */}
+            <div className="user-card rounded-xl px-4 py-3">
+              <TagsSection
+                entityType="creator"
+                entityId={creator.id}
+                initialUserTags={creator.userTags}
+              />
+            </div>
+          </>
         ) : (
-          <div className="h-44 bg-gray-800 rounded-xl animate-pulse" />
+          <div className="h-44 user-card rounded-xl animate-pulse" />
         )}
 
         {error && <p className="text-red-400 text-sm">{error}</p>}
@@ -240,7 +235,7 @@ export default function CreatorSemanticPage() {
             <div className="flex justify-center">
               <button
                 onClick={() => loadPage(cursor, false)}
-                className="bg-gray-700 hover:bg-gray-600 rounded-lg px-6 py-2 text-sm font-medium transition-colors"
+                className="user-btn rounded-lg px-6 py-2 text-sm font-medium"
               >
                 Load more
               </button>

@@ -1,26 +1,92 @@
 ---
 # roles/redis/tasks/main.yml
+# Installs Valkey (Redis-compatible fork) on Debian/Ubuntu and Arch Linux.
+# Valkey is a drop-in replacement for Redis and is actively maintained by
+# the Linux Foundation.
 
-- name: Install Redis
-  ansible.builtin.apt:
-    name: redis-server
+- name: Set Valkey facts (Arch)
+  ansible.builtin.set_fact:
+    redis_service_name: "valkey"
+    redis_config_path: "/etc/valkey/valkey.conf"
+  when: ansible_facts['os_family'] == "Archlinux"
+
+- name: Set Valkey facts (Debian/Ubuntu)
+  ansible.builtin.set_fact:
+    redis_service_name: "valkey"
+    redis_config_path: "/etc/valkey/valkey.conf"
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Install Valkey (Arch)
+  community.general.pacman:
+    name: valkey
     state: present
   become: true
+  when: ansible_facts['os_family'] == "Archlinux"
 
-- name: Ensure Redis is configured to bind on the correct address
+- name: Install prerequisites for Valkey apt repo (Debian)
+  ansible.builtin.apt:
+    name: [gnupg, curl]
+    state: present
+    update_cache: true
+  become: true
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Download Valkey GPG key (Debian)
+  ansible.builtin.get_url:
+    url: "https://packages.valkey.io/gpg"
+    dest: /tmp/valkey-archive-keyring.gpg
+    mode: '0644'
+  become: true
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Dearmor Valkey GPG key (Debian)
+  ansible.builtin.command: >
+    gpg --dearmor -o /usr/share/keyrings/valkey-archive-keyring.gpg
+    /tmp/valkey-archive-keyring.gpg
+  args:
+    creates: /usr/share/keyrings/valkey-archive-keyring.gpg
+  become: true
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Add Valkey apt repository (Debian)
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/valkey-archive-keyring.gpg] https://packages.valkey.io/apt stable main"
+    state: present
+    filename: valkey
+  become: true
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Install Valkey (Debian)
+  ansible.builtin.apt:
+    name: valkey
+    state: present
+    update_cache: true
+  become: true
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Configure Valkey bind address
   ansible.builtin.lineinfile:
-    path: /etc/redis/redis.conf
+    path: "{{ redis_config_path }}"
     regexp: '^bind '
-    line: 'bind {{ redis_bind_address }} ::1'
+    line: 'bind 0.0.0.0'
   become: true
   notify: Restart Redis
 
-- name: Ensure Redis service is started and enabled
+- name: Configure Valkey requirepass
+  ansible.builtin.lineinfile:
+    path: "{{ redis_config_path }}"
+    regexp: '^#?requirepass '
+    line: 'requirepass {{ redis_password }}'
+  become: true
+  notify: Restart Redis
+  when: redis_password is defined and redis_password | length > 0
+
+- name: Ensure Valkey service is started and enabled
   ansible.builtin.service:
-    name: redis-server
+    name: "{{ redis_service_name }}"
     state: started
     enabled: true
   become: true
 
-- name: Flush Redis handlers
+- name: Flush Valkey handlers
   ansible.builtin.meta: flush_handlers

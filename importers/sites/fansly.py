@@ -252,43 +252,50 @@ class FanslyScraper(BaseScraper):
                     if not pid:
                         continue
 
-                    c_name = creator_names.get(cid, "")
-                    content = raw.get("content") or raw.get("text") or ""
-                    published_at = raw.get("createdAt") or raw.get("publishedAt")
+                    try:
+                        c_name = creator_names.get(cid, "")
+                        content = raw.get("content") or raw.get("text") or ""
+                        published_at = raw.get("createdAt") or raw.get("publishedAt")
 
-                    attachments: list[ScrapedAttachment] = []
+                        attachments: list[ScrapedAttachment] = []
 
-                    # Inline media items
-                    for media in raw.get("attachments") or raw.get("media") or []:
-                        media_type = media.get("contentType") or media.get("type") or ""
-                        src = (
-                            media.get("location")
-                            or (media.get("variants") or [{}])[0].get("location")
-                            or media.get("url")
-                            or ""
+                        # Inline media items
+                        for media in raw.get("attachments") or raw.get("media") or []:
+                            media_type = media.get("contentType") or media.get("type") or ""
+                            src = (
+                                media.get("location")
+                                or (media.get("variants") or [{}])[0].get("location")
+                                or media.get("url")
+                                or ""
+                            )
+                            if src:
+                                att = await self._stream(src, headers)
+                                if att:
+                                    if "video" in media_type.lower():
+                                        att.data_type = "VIDEO"
+                                    elif "audio" in media_type.lower():
+                                        att.data_type = "AUDIO"
+                                    else:
+                                        att.data_type = "IMAGE"
+                                    attachments.append(att)
+
+                        post = ScrapedPost(
+                            external_id=pid,
+                            creator_external_id=cid,
+                            service_type="fansly",
+                            title=None,
+                            content=content or None,
+                            published_at=published_at,
+                            attachments=attachments,
+                            creator_name=c_name or None,
                         )
-                        if src:
-                            att = await self._stream(src, headers)
-                            if att:
-                                if "video" in media_type.lower():
-                                    att.data_type = "VIDEO"
-                                elif "audio" in media_type.lower():
-                                    att.data_type = "AUDIO"
-                                else:
-                                    att.data_type = "IMAGE"
-                                attachments.append(att)
-
-                    post = ScrapedPost(
-                        external_id=pid,
-                        creator_external_id=cid,
-                        service_type="fansly",
-                        title=None,
-                        content=content or None,
-                        published_at=published_at,
-                        attachments=attachments,
-                        creator_name=c_name or None,
-                    )
-                    all_posts.append(post)
+                        all_posts.append(post)
+                    except Exception as exc:
+                        self.logger.warning(
+                            "Failed to process Fansly post — skipping",
+                            extra={"job_id": self.job_id, "post_id": pid, "creator_id": cid, "error": str(exc)},
+                        )
+                        continue
 
                     overall_progress = int(
                         (c_idx / n_creators + (idx + 1) / (total * n_creators)) * 100

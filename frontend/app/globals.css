@@ -1,5 +1,93 @@
 @import "tailwindcss";
 
+:root {
+  --user-font-size: 14px;
+  --user-font-family: system-ui, Arial, Helvetica, sans-serif;
+  --user-bg-color: #030712;
+  --user-bg-secondary: #0d1117;
+  --user-font-color: #ffffff;
+  --user-accent-color: #111827;
+  --user-content-bg-color: #1f2937;
+  --user-content-text-color: #e5e7eb;
+  --user-content-font-family: system-ui, Arial, Helvetica, sans-serif;
+  --user-content-font-size: 14px;
+  /* Derived palette variables (updated by applyPrefs) */
+  --user-card-bg: #1f2937;
+  --user-card-hover-bg: #374151;
+  --user-btn-color: #4f46e5;
+  --user-btn-hover-color: #6366f1;
+  --user-border-color: #374151;
+}
+
 body {
-  font-family: system-ui, Arial, Helvetica, sans-serif;
+  font-family: var(--user-font-family);
+  font-size: var(--user-font-size);
+  background-color: var(--user-bg-color);
+  color: var(--user-font-color);
+}
+
+.user-navbar {
+  background-color: var(--user-accent-color) !important;
+}
+
+.user-bg {
+  background-color: var(--user-bg-color);
+  color: var(--user-font-color);
+}
+
+.user-section-bg {
+  background-color: var(--user-bg-secondary);
+}
+
+.user-content-area {
+  background-color: var(--user-content-bg-color);
+  color: var(--user-content-text-color);
+  font-family: var(--user-content-font-family);
+  font-size: var(--user-content-font-size);
+}
+
+/* Card: panel slightly offset from the page background */
+.user-card {
+  background-color: var(--user-card-bg);
+  color: var(--user-font-color);
+  transition: background-color 0.15s;
+}
+.user-card:hover {
+  background-color: var(--user-card-hover-bg);
+}
+
+/* Primary action button */
+.user-btn {
+  background-color: var(--user-btn-color);
+  color: #ffffff;
+  transition: background-color 0.15s;
+}
+.user-btn:hover {
+  background-color: var(--user-btn-hover-color);
+}
+.user-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Form input / select */
+.user-input {
+  background-color: var(--user-card-bg);
+  border-color: var(--user-border-color);
+  color: var(--user-font-color);
+}
+.user-input:focus {
+  outline: none;
+  ring-color: var(--user-btn-color);
+}
+
+/* Sidebar panel background */
+.user-sidebar-bg {
+  background-color: var(--user-card-bg);
+}
+
+/* Active/selected item inside a sidebar */
+.user-sidebar-active {
+  background-color: var(--user-card-hover-bg) !important;
+  color: var(--user-font-color) !important;
 }

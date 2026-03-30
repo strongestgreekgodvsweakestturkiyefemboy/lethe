@@ -32,8 +32,7 @@ export default function JobProgressTracker({ jobId, onReset }: Props) {
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001';
-    const es = new EventSource(`${backendUrl}/api/v1/imports/${jobId}/stream`);
+    const es = new EventSource(`/api/v1/imports/${jobId}/stream`);
 
     es.onmessage = (event) => {
       const data = JSON.parse(event.data as string) as JobUpdate;

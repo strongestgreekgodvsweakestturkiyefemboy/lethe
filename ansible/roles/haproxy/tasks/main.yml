@@ -1,0 +1,94 @@
+---
+# roles/haproxy/tasks/main.yml
+# Installs HAProxy as the HTTP load balancer across [app] hosts.
+# Supports Debian/Ubuntu (apt) and Arch Linux (pacman).
+
+- name: Install HAProxy (Debian)
+  ansible.builtin.apt:
+    name: haproxy
+    state: present
+  become: true
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Install HAProxy (Arch)
+  community.general.pacman:
+    name: haproxy
+    state: present
+  become: true
+  when: ansible_facts['os_family'] == "Archlinux"
+
+#- name: Ensure /run/haproxy is created on boot via tmpfiles.d
+#  ansible.builtin.copy:
+#    content: "d /run/haproxy 0750 haproxy haproxy -"
+#    dest: /etc/tmpfiles.d/haproxy.conf
+#    mode: '0644'
+#  become: true
+
+#- name: Create the directory immediately for the current session
+#  ansible.builtin.command: systemd-tmpfiles --create /etc/tmpfiles.d/haproxy.conf
+#  become: true
+
+- name: Ensure HAProxy errors directory exists
+  ansible.builtin.file:
+    path: /etc/haproxy/errors
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+
+- name: Ensure HAProxy runtime directory exists
+  ansible.builtin.file:
+    path: /run/haproxy
+    state: directory
+    owner: haproxy
+    group: haproxy
+    mode: '0750'
+  become: true
+
+- name: Ensure HAProxy chroot directory exists
+  ansible.builtin.file:
+    path: /var/lib/haproxy
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+
+# An empty errorfile causes HAProxy to send a bare TCP close with 0 bytes,
+# which browsers display as a blank/failed request with no status code.
+# Provide a real HTTP response for every error code so users see a
+# meaningful page instead of nothing.
+- name: Write HAProxy error files
+  ansible.builtin.template:
+    src: haproxy-error.http.j2
+    dest: "/etc/haproxy/errors/{{ item.code }}.http"
+    mode: '0644'
+  loop:
+    - { code: 400, text: "Bad Request" }
+    - { code: 403, text: "Forbidden" }
+    - { code: 408, text: "Request Timeout" }
+    - { code: 500, text: "Internal Server Error" }
+    - { code: 502, text: "Bad Gateway" }
+    - { code: 503, text: "Service Unavailable" }
+    - { code: 504, text: "Gateway Timeout" }
+  become: true
+
+- name: Write HAProxy configuration
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    mode: '0644'
+    validate: haproxy -c -f %s
+  become: true
+  notify: Restart HAProxy
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure HAProxy is started and enabled
+  ansible.builtin.service:
+    name: haproxy
+    state: started
+    enabled: true
+  become: true

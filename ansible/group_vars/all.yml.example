@@ -1,19 +1,13 @@
 # ansible/group_vars/all.yml.example
 # Copy this file to all.yml and fill in real values.
 # all.yml is git-ignored and must NEVER be committed.
+#
+# Service host addresses (postgres_host, redis_host, minio_host, etc.) are
+# resolved automatically from inventory groups at play time — do NOT set them
+# here.  See ansible/tasks/set_service_hosts.yml for the resolution logic.
 
 # ── Project paths ────────────────────────────────────────────
 lethe_root: "{{ ansible_env.HOME }}/lethe"
-
-# ── Service Hosts ────────────────────────────────────────────
-# Hostname or IP of each backing service.
-# When all services run on the same host, keep these as 127.0.0.1.
-# Set each one to the appropriate host/IP when services are distributed.
-postgres_host: "127.0.0.1"
-redis_host: "127.0.0.1"
-minio_host: "127.0.0.1"
-# Internal address of the backend, used by the importer worker for webhooks.
-backend_host: "127.0.0.1"
 
 # ── PostgreSQL ───────────────────────────────────────────────
 postgres_user: lethe
@@ -23,9 +17,8 @@ postgres_port: 5432
 
 # ── Redis ────────────────────────────────────────────────────
 redis_port: 6379
-# Address Redis binds to. Set to 0.0.0.0 (or a specific interface IP)
-# when Redis runs on its own host and must accept remote connections.
-redis_bind_address: "127.0.0.1"
+# Set a strong password when Redis is exposed on a network interface.
+redis_password: "CHANGE_ME_REDIS_PASSWORD"
 
 # ── MinIO ────────────────────────────────────────────────────
 minio_version: "RELEASE.2024-06-13T22-53-53Z"
@@ -35,11 +28,18 @@ minio_port: 9000
 minio_console_port: 9001
 minio_bucket: lethe-imports
 
-# ── Host ─────────────────────────────────────────────────────
-# Public-facing IP address or hostname of this Lethe server.
-# Used by browser clients to reach the backend API.
-# Set this to the IP / FQDN that end-users (or peer nodes) connect to.
-lethe_host: "CHANGE_ME_SERVER_IP_OR_HOSTNAME"
+# ── Load Balancer ─────────────────────────────────────────────
+# Virtual IP managed by Keepalived — the public-facing entry point.
+lb_virtual_ip: "CHANGE_ME_VIP_IP"
+lb_virtual_interface: "eth0"
+# Keepalived VRRP auth password (max 8 chars).
+keepalived_auth_pass: "CHANGE_ME"
+haproxy_stats_password: "CHANGE_ME_HAPROXY_STATS"
+# Port HAProxy listens on for incoming HTTP traffic.
+haproxy_frontend_port: 80
+# Port HAProxy exposes native Prometheus metrics on (localhost only).
+# Must match haproxy_prometheus_port in prometheus.yml.j2 — change both together.
+haproxy_prometheus_port: 8405
 
 # ── Backend ──────────────────────────────────────────────────
 backend_port: 3001
@@ -49,9 +49,21 @@ export_api_key: "CHANGE_ME_EXPORT_API_KEY"
 
 # ── Importer ─────────────────────────────────────────────────
 # Politeness delay (seconds) between individual post requests in the importer.
-# Increase to be more polite to scraped sites; decrease for faster imports.
-# Note: this may be moved to an admin panel in a future release.
 importer_post_delay_seconds: 2
+
+# ── Monitoring ───────────────────────────────────────────────
+grafana_admin_password: "CHANGE_ME_GRAFANA_PASSWORD"
+prometheus_port: 9090
+loki_port: 3100
+# Grafana uses port 3030 by default to avoid collision with Next.js (port 3000)
+# in single-server deployments.
+grafana_port: 3030
+node_exporter_port: 9100
+promtail_port: 9080
+prometheus_version: "2.51.2"
+loki_version: "3.0.0"
+promtail_version: "3.0.0"
+node_exporter_version: "1.7.0"
 
 # ── Logging ──────────────────────────────────────────────────
 # Set to 'info' or 'warn' to reduce verbosity in production.
@@ -62,7 +74,6 @@ node_version: "20"
 
 # ── Python ───────────────────────────────────────────────────
 python_version: "python3"
-
 
 # ── Git Repository ───────────────────────────────────────────────────
 git_repo_url: "git@github.com:strongestgreekgodvsweakestturkiyefemboy/lethe.git"

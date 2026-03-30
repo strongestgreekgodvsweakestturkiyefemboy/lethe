@@ -3,11 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { useAuth } from '@/components/AuthContext';
+import TagsSection from '@/components/TagsSection';
 
-const BACKEND_URL =
-  typeof window !== 'undefined'
-    ? (process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001')
-    : 'http://localhost:3001';
+const BACKEND_URL = '';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -63,6 +62,8 @@ interface PostDetail {
   revisions: PostRevision[];
   attachments: PostAttachment[];
   comments: Comment[];
+  tags: { tag: { id: string; name: string } }[];
+  userTags: { tag: { id: string; name: string }; addedByMe: boolean }[];
 }
 
 // ── Presign helpers ────────────────────────────────────────────────────────────
@@ -96,6 +97,28 @@ async function presignContentImages(html: string): Promise<string> {
 
 // ── Components ────────────────────────────────────────────────────────────────
 
+function CollapsibleFiles({ attachments }: { attachments: PostAttachment[] }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <section className="space-y-2">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 text-lg font-semibold transition-colors w-full text-left"
+        style={{ color: 'var(--user-font-color)' }}
+      >
+        <span>{open ? '▾' : '▸'}</span>
+        <span>Files ({attachments.length})</span>
+      </button>
+      {open && (
+        <div className="space-y-4 pt-2">
+          {attachments.map((att) => <AttachmentViewer key={att.id} attachment={att} />)}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function AttachmentViewer({ attachment }: { attachment: PostAttachment }) {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState(false);
@@ -106,8 +129,8 @@ function AttachmentViewer({ attachment }: { attachment: PostAttachment }) {
 
   const filename = attachment.name ?? attachment.fileUrl.split('/').pop() ?? 'file';
 
-  if (error) return <div className="bg-gray-800 rounded-xl p-4 text-center text-gray-500 text-sm">Media unavailable</div>;
-  if (!url) return <div className="bg-gray-800 rounded-xl p-4 flex items-center justify-center text-gray-600 text-sm aspect-video animate-pulse">Loading…</div>;
+  if (error) return <div className="user-card rounded-xl p-4 text-center text-sm" style={{ opacity: 0.5 }}>Media unavailable</div>;
+  if (!url) return <div className="user-card rounded-xl p-4 flex items-center justify-center text-sm aspect-video animate-pulse" style={{ opacity: 0.4 }}>Loading…</div>;
 
   if (attachment.dataType === 'IMAGE') {
     return (
@@ -120,17 +143,17 @@ function AttachmentViewer({ attachment }: { attachment: PostAttachment }) {
   }
   if (attachment.dataType === 'AUDIO') {
     return (
-      <div className="bg-gray-800 rounded-xl p-4">
+      <div className="user-card rounded-xl p-4">
         <audio controls className="w-full"><source src={url} /></audio>
-        <p className="text-xs text-gray-500 mt-2">{filename}</p>
+        <p className="text-xs mt-2" style={{ opacity: 0.5 }}>{filename}</p>
       </div>
     );
   }
   return (
-    <div className="bg-gray-800 rounded-xl p-4 flex items-center gap-3">
+    <div className="user-card rounded-xl p-4 flex items-center gap-3">
       <span className="text-2xl">📄</span>
-      <div className="flex-1 min-w-0"><p className="text-sm font-medium text-gray-200 truncate">{filename}</p></div>
-      <a href={url} download={filename} className="shrink-0 bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-medium rounded-lg px-3 py-1.5 transition-colors">Download</a>
+      <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate">{filename}</p></div>
+      <a href={url} download={filename} className="shrink-0 user-btn text-xs font-medium rounded-lg px-3 py-1.5">Download</a>
     </div>
   );
 }
@@ -150,7 +173,7 @@ function CreatorAvatar({ creator }: { creator: PostCreator }) {
     // eslint-disable-next-line @next/next/no-img-element
     <img src={thumbUrl} alt={displayName} className="w-12 h-12 rounded-lg object-cover shrink-0" />
   ) : (
-    <div className="w-12 h-12 rounded-lg bg-gray-600 shrink-0 flex items-center justify-center text-gray-300 font-semibold text-lg">{initial}</div>
+    <div className="w-12 h-12 rounded-lg user-sidebar-bg shrink-0 flex items-center justify-center font-semibold text-lg" style={{ opacity: 0.7 }}>{initial}</div>
   );
 }
 
@@ -172,13 +195,16 @@ function PostContent({ html }: { html: string }) {
 
 export default function PostDetailPage() {
   const { postId } = useParams<{ postId: string }>();
+  const { token } = useAuth();
   const [post, setPost] = useState<PostDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRevisionIdx, setSelectedRevisionIdx] = useState(0);
 
   useEffect(() => {
-    fetch(`${BACKEND_URL}/api/v1/posts/${postId}`)
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    fetch(`${BACKEND_URL}/api/v1/posts/${postId}`, { headers })
       .then((res) => {
         if (!res.ok) throw new Error(`Server error: ${res.status}`);
         return res.json() as Promise<{ post: PostDetail }>;
@@ -186,23 +212,23 @@ export default function PostDetailPage() {
       .then(({ post }) => { setPost(post); setSelectedRevisionIdx(0); })
       .catch((err) => setError(err instanceof Error ? err.message : 'Unknown error'))
       .finally(() => setLoading(false));
-  }, [postId]);
+  }, [postId, token]);
 
-  if (loading) return <div className="min-h-[calc(100vh-3rem)] bg-gray-950 text-white flex items-center justify-center">Loading…</div>;
-  if (error || !post) return <div className="min-h-[calc(100vh-3rem)] bg-gray-950 text-white flex items-center justify-center"><p className="text-red-400">{error ?? 'Post not found'}</p></div>;
+  if (loading) return <div className="min-h-[calc(100vh-3rem)] user-bg flex items-center justify-center">Loading…</div>;
+  if (error || !post) return <div className="min-h-[calc(100vh-3rem)] user-bg flex items-center justify-center"><p className="text-red-400">{error ?? 'Post not found'}</p></div>;
 
   const selectedRevision = post.revisions[selectedRevisionIdx];
 
   return (
-    <div className="min-h-[calc(100vh-3rem)] bg-gray-950 text-white">
+    <div className="min-h-[calc(100vh-3rem)] user-bg">
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
         {/* Nav */}
-        <Link href={`/${post.creator.serviceType}/user/${post.creator.externalId}`} className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors">
+        <Link href={`/${post.creator.serviceType}/user/${post.creator.externalId}`} className="text-sm transition-colors" style={{ color: 'var(--user-btn-hover-color)' }}>
           ← {post.creator.name ?? post.creator.externalId}
         </Link>
 
         {/* Post header */}
-        <div className="bg-gray-800 rounded-xl p-5 space-y-4">
+        <div className="user-section-bg rounded-xl p-5 space-y-4">
           <div className="flex gap-4">
             <CreatorAvatar creator={post.creator} />
             <div className="flex-1 min-w-0 space-y-2">
@@ -217,7 +243,7 @@ export default function PostDetailPage() {
                     <select
                       value={selectedRevisionIdx}
                       onChange={(e) => setSelectedRevisionIdx(Number(e.target.value))}
-                      className="bg-gray-700 border border-gray-600 rounded-lg px-2 py-0.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 w-fit"
+                      className="user-input border rounded-lg px-2 py-0.5 text-sm focus:outline-none w-fit"
                     >
                       {post.revisions.map((rev, idx) => (
                         <option key={rev.id} value={idx}>
@@ -231,6 +257,14 @@ export default function PostDetailPage() {
               </div>
             </div>
           </div>
+
+          {/* Tags */}
+          <TagsSection
+            entityType="post"
+            entityId={post.id}
+            importerTags={post.tags}
+            initialUserTags={post.userTags}
+          />
         </div>
 
         {/* Post body */}
@@ -243,12 +277,7 @@ export default function PostDetailPage() {
 
         {/* Attachments */}
         {post.attachments.length > 0 && (
-          <section className="space-y-4">
-            <h2 className="text-lg font-semibold text-gray-300">Files ({post.attachments.length})</h2>
-            <div className="space-y-4">
-              {post.attachments.map((att) => <AttachmentViewer key={att.id} attachment={att} />)}
-            </div>
-          </section>
+          <CollapsibleFiles attachments={post.attachments} />
         )}
 
         {/* Comments */}
@@ -257,9 +286,9 @@ export default function PostDetailPage() {
             <h2 className="text-lg font-semibold text-gray-300">Comments ({post.comments.length})</h2>
             <div className="space-y-3">
               {post.comments.map((comment) => (
-                <div key={comment.id} className="bg-gray-800 rounded-xl p-4 space-y-1">
+                <div key={comment.id} className="user-card rounded-xl p-4 space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-indigo-300">{comment.authorName ?? 'Anonymous'}</span>
+                    <span className="text-sm font-medium" style={{ color: 'var(--user-btn-hover-color)' }}>{comment.authorName ?? 'Anonymous'}</span>
                     {comment.publishedAt && <span className="text-xs text-gray-500">{new Date(comment.publishedAt).toLocaleString()}</span>}
                   </div>
                   <div

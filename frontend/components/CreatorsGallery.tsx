@@ -3,10 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 
-const BACKEND_URL =
-  typeof window !== 'undefined'
-    ? (process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001')
-    : 'http://localhost:3001';
+const BACKEND_URL = '';
 
 interface Creator {
   id: string;
@@ -57,7 +54,7 @@ function CreatorCard({ creator }: { creator: Creator }) {
   return (
     <Link
       href={`/${creator.serviceType}/user/${creator.externalId}`}
-      className="bg-gray-800 rounded-xl p-4 hover:bg-gray-700 transition-colors flex items-start gap-3"
+      className="user-card rounded-xl p-4 flex items-start gap-3"
     >
       {/* Avatar */}
       {thumbUrl ? (
@@ -68,7 +65,7 @@ function CreatorCard({ creator }: { creator: Creator }) {
           className="w-12 h-12 rounded-full object-cover shrink-0"
         />
       ) : (
-        <div className="w-12 h-12 rounded-full bg-gray-600 shrink-0 flex items-center justify-center text-gray-300 font-semibold text-lg">
+        <div className="w-12 h-12 rounded-full user-sidebar-bg shrink-0 flex items-center justify-center font-semibold text-lg" style={{ opacity: 0.7 }}>
           {initial}
         </div>
       )}
@@ -76,7 +73,7 @@ function CreatorCard({ creator }: { creator: Creator }) {
         <div className="flex items-start justify-between gap-2">
           <p className="font-semibold text-white truncate">{displayName}</p>
           <div className="shrink-0 text-right">
-            <span className="text-sm font-semibold text-indigo-400">{creator._count.posts}</span>
+            <span className="text-sm font-semibold" style={{ color: 'var(--user-btn-hover-color)' }}>{creator._count.posts}</span>
             <p className="text-xs text-gray-500">posts</p>
           </div>
         </div>
@@ -156,7 +153,7 @@ export default function CreatorsGallery({ sourceSite, serviceType }: Props) {
         <div className="flex justify-center">
           <button
             onClick={() => loadPage(cursor, false)}
-            className="bg-gray-700 hover:bg-gray-600 rounded-lg px-6 py-2 text-sm font-medium transition-colors"
+            className="user-btn rounded-lg px-6 py-2 text-sm font-medium"
           >
             Load more
           </button>

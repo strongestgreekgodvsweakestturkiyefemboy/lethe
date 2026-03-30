@@ -1,0 +1,25 @@
+---
+# roles/monitoring/handlers/main.yml
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+  become: true
+
+- name: Restart Prometheus
+  ansible.builtin.service:
+    name: prometheus
+    state: restarted
+  become: true
+
+- name: Restart Loki
+  ansible.builtin.service:
+    name: loki
+    state: restarted
+  become: true
+
+- name: Restart Grafana
+  ansible.builtin.service:
+    name: "{{ grafana_service_name }}"
+    state: restarted
+  become: true

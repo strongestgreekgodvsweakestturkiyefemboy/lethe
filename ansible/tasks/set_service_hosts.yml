@@ -1,0 +1,54 @@
+---
+# ansible/tasks/set_service_hosts.yml
+# Dynamically resolve service host addresses from inventory groups.
+# Include this in every play that needs cross-tier connectivity.
+# Falls back to the inventory hostname when ansible_host is not explicitly set.
+
+- name: Resolve postgres_host from [db] group
+  ansible.builtin.set_fact:
+    postgres_host: >-
+      {{ hostvars[groups['db'][0]]['ansible_host']
+         | default(groups['db'][0]) }}
+  when: groups['db'] is defined and groups['db'] | length > 0
+
+- name: Resolve redis_host from [cache] group
+  ansible.builtin.set_fact:
+    redis_host: >-
+      {{ hostvars[groups['cache'][0]]['ansible_host']
+         | default(groups['cache'][0]) }}
+  when: groups['cache'] is defined and groups['cache'] | length > 0
+
+- name: Resolve minio_host from [storage] group
+  ansible.builtin.set_fact:
+    minio_host: >-
+      {{ hostvars[groups['storage'][0]]['ansible_host']
+         | default(groups['storage'][0]) }}
+  when: groups['storage'] is defined and groups['storage'] | length > 0
+
+- name: Resolve monitoring_host from [monitoring] group
+  ansible.builtin.set_fact:
+    monitoring_host: >-
+      {{ hostvars[groups['monitoring'][0]]['ansible_host']
+         | default(groups['monitoring'][0]) }}
+  when: groups['monitoring'] is defined and groups['monitoring'] | length > 0
+
+- name: Resolve lb_host from [lb] group
+  ansible.builtin.set_fact:
+    lb_host: >-
+      {{ hostvars[groups['lb'][0]]['ansible_host']
+         | default(groups['lb'][0]) }}
+  when: groups['lb'] is defined and groups['lb'] | length > 0
+
+- name: Resolve backend_host from [backend] group
+  ansible.builtin.set_fact:
+    backend_host: >-
+      {{ hostvars[groups['backend'][0]]['ansible_host']
+         | default(groups['backend'][0]) }}
+  when: groups['backend'] is defined and groups['backend'] | length > 0
+
+- name: Resolve frontend_host from [frontend] group
+  ansible.builtin.set_fact:
+    frontend_host: >-
+      {{ hostvars[groups['frontend'][0]]['ansible_host']
+         | default(groups['frontend'][0]) }}
+  when: groups['frontend'] is defined and groups['frontend'] | length > 0

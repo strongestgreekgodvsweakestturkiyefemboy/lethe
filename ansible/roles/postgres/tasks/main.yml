@@ -1,7 +1,9 @@
 ---
 # roles/postgres/tasks/main.yml
+# Supports Debian/Ubuntu (apt) and Arch Linux (pacman).
 
-- name: Install PostgreSQL
+# ── Package installation ──────────────────────────────────────
+- name: Install PostgreSQL (Debian)
   ansible.builtin.apt:
     name:
       - postgresql
@@ -9,6 +11,32 @@
       - python3-psycopg2
     state: present
   become: true
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Install PostgreSQL (Arch)
+  community.general.pacman:
+    name:
+      - postgresql
+      - python-psycopg2
+    state: present
+  become: true
+  when: ansible_facts['os_family'] == "Archlinux"
+
+# ── Arch: initialise the data directory before first start ────
+- name: Check if PostgreSQL data directory is initialised (Arch)
+  ansible.builtin.stat:
+    path: /var/lib/postgres/data/PG_VERSION
+  register: pg_data_init
+  become: true
+  when: ansible_facts['os_family'] == "Archlinux"
+
+- name: Initialise PostgreSQL data directory (Arch)
+  ansible.builtin.command: initdb -D /var/lib/postgres/data --locale=en_US.UTF-8 --encoding=UTF8
+  become: true
+  become_user: postgres
+  when:
+    - ansible_facts['os_family'] == "Archlinux"
+    - not pg_data_init.stat.exists
 
 - name: Ensure PostgreSQL service is started and enabled
   ansible.builtin.service:
@@ -32,3 +60,52 @@
     encoding: UTF-8
   become: true
   become_user: postgres
+
+# ── Remote access (multi-server) ─────────────────────────────
+- name: Configure PostgreSQL to listen on all interfaces
+  community.postgresql.postgresql_set:
+    name: listen_addresses
+    value: "*"
+  become: true
+  become_user: postgres
+  notify: Restart PostgreSQL
+
+- name: Find pg_hba.conf (Debian)
+  ansible.builtin.find:
+    paths: /etc/postgresql
+    patterns: pg_hba.conf
+    recurse: true
+  register: pg_hba_find
+  become: true
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Find pg_hba.conf (Arch)
+  ansible.builtin.find:
+    paths: /var/lib/postgres/data
+    patterns: pg_hba.conf
+    recurse: false
+  register: pg_hba_find
+  become: true
+  when: ansible_facts['os_family'] == "Archlinux"
+
+- name: Set pg_hba_path fact
+  ansible.builtin.set_fact:
+    pg_hba_path: "{{ pg_hba_find.files[0].path }}"
+  when: pg_hba_find.files | length > 0
+
+- name: Allow remote connections from app hosts
+  community.postgresql.postgresql_pg_hba:
+    dest: "{{ pg_hba_path }}"
+    contype: host
+    users: "{{ postgres_user }}"
+    databases: "{{ postgres_db }}"
+    source: "{{ hostvars[item]['ansible_host'] | default(item) }}/32"
+    method: md5
+  loop: "{{ groups['app'] | default([]) }}"
+  become: true
+  become_user: postgres
+  notify: Restart PostgreSQL
+  when: pg_hba_path is defined
+
+- name: Flush PostgreSQL handlers
+  ansible.builtin.meta: flush_handlers

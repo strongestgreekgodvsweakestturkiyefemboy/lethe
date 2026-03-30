@@ -1,34 +1,116 @@
----
-# ansible/site.yml
-# Full provision + deploy: installs all services and deploys every component.
-# Run: ansible-playbook -i inventory/hosts.ini site.yml
-
-- name: Provision and deploy Lethe
+# ── Common bootstrap (all hosts) ─────────────────────────────
+- name: Bootstrap all hosts
   hosts: lethe
   gather_facts: true
-
-  pre_tasks:
-    - name: Verify group_vars/all.yml exists
-      ansible.builtin.stat:
-        path: "{{ playbook_dir }}/group_vars/all.yml"
-      register: gvars
-      delegate_to: localhost
-      run_once: true
-
-    - name: Fail if group_vars/all.yml is missing
-      ansible.builtin.fail:
-        msg: >
-          Please copy ansible/group_vars/all.yml.example to ansible/group_vars/all.yml
-          and fill in your secrets before running this playbook.
-      when: not gvars.stat.exists
-      delegate_to: localhost
-      run_once: true
-
   roles:
     - role: common
+  tags: [bootstrap, common] # <--- Added tags
+
+# ── Node Exporter (all hosts) ─────────────────────────────────
+- name: Install Node Exporter on every host
+  hosts: lethe
+  gather_facts: true
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+  roles:
+    - role: node_exporter
+  tags: [monitoring, node_exporter]
+
+# ── Data tier ─────────────────────────────────────────────────
+- name: Provision PostgreSQL
+  hosts: db
+  gather_facts: true
+  tags: [data, db, postgres] # <--- Play-level tags cover roles + pre_tasks
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+  roles:
     - role: postgres
+
+- name: Provision Redis
+  hosts: cache
+  gather_facts: true
+  tags: [data, cache, redis]
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+  roles:
     - role: redis
+
+- name: Provision MinIO
+  hosts: storage
+  gather_facts: true
+  tags: [data, storage, minio] # <--- Use this to debug your cluster
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+  roles:
     - role: minio
+
+# ── Application tier ──────────────────────────────────────────
+- name: Deploy backend API
+  hosts: backend
+  gather_facts: true
+  tags: [app, backend]
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+  roles:
     - role: backend
-    - role: importers
+    - role: scanner
+
+- name: Deploy frontend
+  hosts: frontend
+  gather_facts: true
+  tags: [app, frontend]
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+  roles:
     - role: frontend
+
+- name: Deploy importer workers
+  hosts: importers
+  gather_facts: true
+  tags: [app, importers, workers]
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+  roles:
+    - role: importers
+
+# ── Log shipping ──────────────────────────
+- name: Install Promtail
+  hosts: backend:frontend:importers:db:cache:storage
+  gather_facts: true
+  tags: [monitoring, promtail]
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+  roles:
+    - role: promtail
+
+# ── Cache-proxy / load-balancer tier ─────────────────────────
+- name: Provision cache proxy and load balancer
+  hosts: lb
+  gather_facts: true
+  tags: [infra, lb, nginx, haproxy]
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+  roles:
+    - role: nginx
+    - role: haproxy
+    - role: keepalived
+
+# ── Monitoring tier ───────────────────────────────────────────
+- name: Provision monitoring stack
+  hosts: monitoring
+  gather_facts: true
+  tags: [monitoring, grafana, prometheus]
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+  roles:
+    - role: monitoring

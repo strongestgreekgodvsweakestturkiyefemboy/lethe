@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
-const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001';
+const BACKEND = '';
 
 interface LatestPost {
   id: string;
@@ -14,21 +14,13 @@ interface LatestPost {
   _count: { attachments: number; comments: number };
 }
 
-interface LatestUser {
-  id: string;
-  username: string | null;
-  createdAt: string;
-}
-
 function stripHtml(html: string) {
   return html.replace(/<[^>]*>/g, '').slice(0, 120);
 }
 
 export default function LatestSection() {
   const [posts, setPosts] = useState<LatestPost[]>([]);
-  const [users, setUsers] = useState<LatestUser[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(true);
-  const [loadingUsers, setLoadingUsers] = useState(true);
 
   useEffect(() => {
     fetch(`${BACKEND}/api/v1/posts/latest?limit=6`)
@@ -36,18 +28,12 @@ export default function LatestSection() {
       .then((d) => setPosts(d.posts ?? []))
       .catch(() => {})
       .finally(() => setLoadingPosts(false));
-
-    fetch(`${BACKEND}/api/v1/users?limit=8`)
-      .then((r) => r.json())
-      .then((d) => setUsers(d.users ?? []))
-      .catch(() => {})
-      .finally(() => setLoadingUsers(false));
   }, []);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <div>
       {/* Latest Posts */}
-      <div className="lg:col-span-2">
+      <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold">Latest Posts</h2>
           <Link href="/search" className="text-sm text-indigo-400 hover:text-indigo-300">
@@ -59,7 +45,7 @@ export default function LatestSection() {
         ) : posts.length === 0 ? (
           <p className="text-gray-500 text-sm">No posts yet. <Link href="/import" className="text-indigo-400 hover:underline">Import some content</Link> to get started.</p>
         ) : (
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {posts.map((post) => {
               const rev = post.revisions[0];
               const title = rev?.title ?? 'Untitled';
@@ -82,37 +68,6 @@ export default function LatestSection() {
                 </div>
               );
             })}
-          </div>
-        )}
-      </div>
-
-      {/* Latest Users */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold">Latest Users</h2>
-          <Link href="/search?tab=users" className="text-sm text-indigo-400 hover:text-indigo-300">
-            All users →
-          </Link>
-        </div>
-        {loadingUsers ? (
-          <p className="text-gray-500 text-sm">Loading…</p>
-        ) : users.length === 0 ? (
-          <p className="text-gray-500 text-sm">No accounts yet.</p>
-        ) : (
-          <div className="bg-gray-900 rounded-xl divide-y divide-gray-800">
-            {users.map((u) => (
-              <div key={u.id} className="flex items-center gap-3 px-4 py-3">
-                <div className="w-8 h-8 rounded-full bg-indigo-600/30 flex items-center justify-center text-indigo-300 font-bold text-sm shrink-0">
-                  {(u.username ?? '?')[0].toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-white truncate">@{u.username}</p>
-                  <p className="text-xs text-gray-500">
-                    Joined {new Date(u.createdAt).toLocaleDateString()}
-                  </p>
-                </div>
-              </div>
-            ))}
           </div>
         )}
       </div>

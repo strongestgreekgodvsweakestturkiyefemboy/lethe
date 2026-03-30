@@ -1,0 +1,11 @@
+---
+# roles/monitoring/defaults/main.yml
+prometheus_version: "2.51.2"
+loki_version: "3.0.0"
+# Grafana runs on port 3030 to avoid collision with the Next.js frontend (3000)
+# in single-server deployments. Override in group_vars/all.yml if needed.
+grafana_port: 3030
+prometheus_port: 9090
+loki_port: 3100
+grafana_admin_password: "admin"
+node_exporter_port: 9100

@@ -1,14 +1,17 @@
 ---
 # roles/common/tasks/main.yml
 # Install OS-level dependencies shared by all other roles.
+# Supports Debian/Ubuntu (apt) and Arch Linux (pacman).
 
-- name: Update apt cache
+# ── Debian / Ubuntu ───────────────────────────────────────────
+- name: Update apt cache (Debian)
   ansible.builtin.apt:
     update_cache: true
     cache_valid_time: 3600
   become: true
+  when: ansible_facts['os_family'] == "Debian"
 
-- name: Install common system packages
+- name: Install common system packages (Debian)
   ansible.builtin.apt:
     name:
       - curl
@@ -22,26 +25,64 @@
       - python3-venv
     state: present
   become: true
+  when: ansible_facts['os_family'] == "Debian"
 
-# ── Node.js via NodeSource ────────────────────────────────────
+# ── Arch Linux ────────────────────────────────────────────────
+- name: Update pacman cache (Arch)
+  community.general.pacman:
+    update_cache: true
+  become: true
+  when: ansible_facts['os_family'] == "Archlinux"
+
+- name: Install common system packages (Arch)
+  community.general.pacman:
+    name:
+      - curl
+      - git
+      - base-devel
+      - ca-certificates
+      - gnupg
+      - unzip
+      - acl
+      - python
+      - python-pip
+    state: present
+  become: true
+  when: ansible_facts['os_family'] == "Archlinux"
+
+# ── Node.js ───────────────────────────────────────────────────
 - name: Check if Node.js is already installed
   ansible.builtin.command: node --version
   register: node_check
   changed_when: false
   failed_when: false
 
-- name: Add NodeSource apt repository
+- name: Add NodeSource apt repository (Debian)
   ansible.builtin.shell: |
     curl -fsSL https://deb.nodesource.com/setup_{{ node_version }}.x | bash -
   become: true
-  when: node_check.rc != 0
+  when:
+    - node_check.rc != 0
+    - ansible_facts['os_family'] == "Debian"
 
-- name: Install Node.js
+- name: Install Node.js (Debian)
   ansible.builtin.apt:
     name: nodejs
     state: present
   become: true
-  when: node_check.rc != 0
+  when:
+    - node_check.rc != 0
+    - ansible_facts['os_family'] == "Debian"
+
+- name: Install Node.js (Arch)
+  community.general.pacman:
+    name: 
+      - nodejs
+      - npm
+    state: present
+  become: true
+  when:
+    - ansible_facts['os_family'] == "Archlinux"
 
 - name: Install pm2 globally
   community.general.npm:
@@ -50,9 +91,16 @@
     state: present
   become: true
 
-
-- name: Git clone repo
+# ── Repository ────────────────────────────────────────────────
+# Use force=true so a re-run works even when local files have been modified
+# (e.g. by Ansible-generated .env files that land inside the repo directory).
+- name: Clone or update git repository
   ansible.builtin.git:
     repo: '{{ git_repo_url }}'
-    dest: '~/lethe'
+    dest: '{{ lethe_root }}'
+    accept_hostkey: yes
+    force: true
+    update: true
+  when: true
+  register: git_pull
 

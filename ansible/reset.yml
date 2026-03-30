@@ -1,0 +1,123 @@
+---
+# ansible/reset.yml
+# Dev / staging reset playbook.
+# Resets all services EXCEPT the database and minio object bucket to their initial state:
+#   - Stops pm2 application processes
+#   - Flushes Valkey (clears all queued jobs and cached data)
+#   - Force-updates the git repository (discards any local modifications)
+#   - Redeploys backend, importers, frontend, and Nginx
+#
+#
+# Run: ansible-playbook -i inventory/hosts.ini reset.yml
+
+- name: Reset application state
+  hosts: app
+  gather_facts: true
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+
+  tasks:
+    # ── Stop pm2 processes ────────────────────────────────────
+    - name: Stop all pm2 processes
+      ansible.builtin.command: pm2 stop all
+      register: pm2_stop
+      changed_when: true
+      failed_when: false   # graceful: ok if no processes are running
+
+    - name: Delete all pm2 processes
+      ansible.builtin.command: pm2 delete all
+      changed_when: true
+      failed_when: false
+
+    # ── Force-update git repository ───────────────────────────
+    # force=true discards any files modified inside the repo directory
+    # (e.g. .env files written by Ansible templates).
+    - name: Force-update git repository
+      ansible.builtin.git:
+        repo: '{{ git_repo_url }}'
+        dest: '{{ lethe_root }}'
+        force: true
+        update: true
+      register: git_update
+
+    - name: Show git update result
+      ansible.builtin.debug:
+        msg: "Git updated to {{ git_update.after }}"
+
+# ── Flush Valkey ──────────────────────────────────────────────
+- name: Flush Valkey
+  hosts: cache
+  gather_facts: false
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+
+  tasks:
+    - name: Flush all Valkey data
+      ansible.builtin.command: >
+        valkey-cli -h {{ redis_host }} -p {{ redis_port }}
+        -a {{ redis_password }} FLUSHALL
+      changed_when: true
+      no_log: true
+
+    - name: Confirm Valkey flush
+      ansible.builtin.debug:
+        msg: "Valkey flushed ✓"
+
+# ── Reset MinIO bucket ────────────────────────────────────────
+#- name: Reset MinIO bucket
+#  hosts: storage
+#  gather_facts: false
+#  pre_tasks:
+#    - name: Resolve service host addresses
+#      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+#
+#  tasks:
+#    - name: Configure mc alias for local MinIO
+#      ansible.builtin.command: >
+#        mc alias set local
+#        http://{{ minio_host }}:{{ minio_port }}
+#        {{ minio_access_key }}
+#        {{ minio_secret_key }}
+#      changed_when: false
+#      no_log: true
+#
+#    - name: Remove all objects from the bucket
+#      ansible.builtin.command: mc rm --recursive --force local/{{ minio_bucket }}
+#      changed_when: true
+#      failed_when: false   # ok if bucket is already empty
+#
+#    - name: Recreate the bucket
+#      ansible.builtin.command: mc mb --ignore-existing local/{{ minio_bucket }}
+#      changed_when: false
+#
+#    - name: Confirm MinIO reset
+#      ansible.builtin.debug:
+#        msg: "MinIO bucket '{{ minio_bucket }}' reset ✓"
+
+# ── Redeploy application ──────────────────────────────────────
+- name: Redeploy application services
+  hosts: app
+  gather_facts: true
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+  roles:
+    - role: backend
+    - role: importers
+    - role: frontend
+    - role: nginx
+
+# ── Summary ───────────────────────────────────────────────────
+- name: Reset complete
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Print summary
+      ansible.builtin.debug:
+        msg: >
+          Reset complete.
+          Valkey flushed, MinIO bucket cleared, git repository updated,
+          application services redeployed.
+          PostgreSQL data was NOT modified.

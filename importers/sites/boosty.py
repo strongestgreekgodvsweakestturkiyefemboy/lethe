@@ -280,69 +280,76 @@ class BoostyScraper(BaseScraper):
                     if not pid:
                         continue
 
-                    title = raw.get("title") or raw.get("name") or ""
-                    published_ts = raw.get("publishTime") or raw.get("publishedAt")
-                    published_at: str | None = None
-                    if published_ts and isinstance(published_ts, (int, float)):
-                        published_at = datetime.fromtimestamp(
-                            published_ts, tz=timezone.utc
-                        ).isoformat()
-                    elif isinstance(published_ts, str):
-                        published_at = published_ts
+                    try:
+                        title = raw.get("title") or raw.get("name") or ""
+                        published_ts = raw.get("publishTime") or raw.get("publishedAt")
+                        published_at: str | None = None
+                        if published_ts and isinstance(published_ts, (int, float)):
+                            published_at = datetime.fromtimestamp(
+                                published_ts, tz=timezone.utc
+                            ).isoformat()
+                        elif isinstance(published_ts, str):
+                            published_at = published_ts
 
-                    content_blocks = raw.get("data") or raw.get("content") or []
-                    content_html = ""
-                    if isinstance(content_blocks, list):
-                        content_html = _blocks_to_html(content_blocks)
-                    elif isinstance(content_blocks, str):
-                        content_html = content_blocks
+                        content_blocks = raw.get("data") or raw.get("content") or []
+                        content_html = ""
+                        if isinstance(content_blocks, list):
+                            content_html = _blocks_to_html(content_blocks)
+                        elif isinstance(content_blocks, str):
+                            content_html = content_blocks
 
-                    attachments: list[ScrapedAttachment] = []
-                    for media in raw.get("media") or []:
-                        url = (
-                            media.get("url")
-                            or media.get("full_url")
-                            or media.get("playerUrl")
-                        )
-                        if url:
-                            att = await self._stream(url, headers, media.get("filename"))
-                            if att:
-                                media_type = media.get("type") or ""
-                                if "video" in media_type.lower():
-                                    att.data_type = "VIDEO"
-                                elif "audio" in media_type.lower():
-                                    att.data_type = "AUDIO"
-                                elif "image" in media_type.lower() or "photo" in media_type.lower():
-                                    att.data_type = "IMAGE"
-                                attachments.append(att)
-
-                    # Comments
-                    comments: list[ScrapedComment] = []
-                    for c in raw.get("comments") or []:
-                        ci = str(c.get("id") or "")
-                        if ci:
-                            comments.append(
-                                ScrapedComment(
-                                    external_id=ci,
-                                    content=c.get("message") or c.get("content") or "",
-                                    author_name=(c.get("user") or {}).get("name"),
-                                    published_at=c.get("createdAt"),
-                                )
+                        attachments: list[ScrapedAttachment] = []
+                        for media in raw.get("media") or []:
+                            url = (
+                                media.get("url")
+                                or media.get("full_url")
+                                or media.get("playerUrl")
                             )
+                            if url:
+                                att = await self._stream(url, headers, media.get("filename"))
+                                if att:
+                                    media_type = media.get("type") or ""
+                                    if "video" in media_type.lower():
+                                        att.data_type = "VIDEO"
+                                    elif "audio" in media_type.lower():
+                                        att.data_type = "AUDIO"
+                                    elif "image" in media_type.lower() or "photo" in media_type.lower():
+                                        att.data_type = "IMAGE"
+                                    attachments.append(att)
 
-                    post = ScrapedPost(
-                        external_id=pid,
-                        creator_external_id=creator_ext_id,
-                        service_type="boosty",
-                        title=title or None,
-                        content=content_html or None,
-                        published_at=published_at,
-                        attachments=attachments,
-                        comments=comments,
-                        creator_name=creator_name or None,
-                        creator_thumbnail_url=thumbnail_url,
-                    )
-                    all_posts.append(post)
+                        # Comments
+                        comments: list[ScrapedComment] = []
+                        for c in raw.get("comments") or []:
+                            ci = str(c.get("id") or "")
+                            if ci:
+                                comments.append(
+                                    ScrapedComment(
+                                        external_id=ci,
+                                        content=c.get("message") or c.get("content") or "",
+                                        author_name=(c.get("user") or {}).get("name"),
+                                        published_at=c.get("createdAt"),
+                                    )
+                                )
+
+                        post = ScrapedPost(
+                            external_id=pid,
+                            creator_external_id=creator_ext_id,
+                            service_type="boosty",
+                            title=title or None,
+                            content=content_html or None,
+                            published_at=published_at,
+                            attachments=attachments,
+                            comments=comments,
+                            creator_name=creator_name or None,
+                            creator_thumbnail_url=thumbnail_url,
+                        )
+                        all_posts.append(post)
+                    except Exception as exc:
+                        self.logger.warning(
+                            "Failed to process Boosty post — skipping",
+                            extra={"job_id": self.job_id, "post_id": pid, "blog": blog, "error": str(exc)},
+                        )
+                        continue
 
                     overall_progress = int(
                         (b_idx / n_blogs + (idx + 1) / (total * n_blogs)) * 100

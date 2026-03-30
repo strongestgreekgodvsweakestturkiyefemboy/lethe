@@ -29,7 +29,7 @@ function ItemsPageContent() {
               id="site"
               value={sourceSite}
               onChange={(e) => setSourceSite(e.target.value)}
-              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="user-input border rounded-lg px-3 py-1.5 text-sm focus:outline-none"
             >
               {SITES.map((s) => <option key={s} value={s}>{s || 'All sites'}</option>)}
             </select>
@@ -41,7 +41,7 @@ function ItemsPageContent() {
               id="type"
               value={dataType}
               onChange={(e) => setDataType(e.target.value)}
-              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="user-input border rounded-lg px-3 py-1.5 text-sm focus:outline-none"
             >
               {DATA_TYPES.map((t) => <option key={t} value={t}>{t || 'All types'}</option>)}
             </select>
@@ -49,7 +49,7 @@ function ItemsPageContent() {
 
           <button
             onClick={applyFilters}
-            className="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-4 py-1.5 text-sm font-medium transition-colors"
+            className="user-btn rounded-lg px-4 py-1.5 text-sm font-medium"
           >
             Apply
           </button>

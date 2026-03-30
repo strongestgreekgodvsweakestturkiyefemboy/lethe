@@ -2,11 +2,12 @@
 
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 
-const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001';
+const BACKEND = '';
 
 export interface AuthUser {
   id: string;
   username: string;
+  isAdmin?: boolean;
   createdAt: string;
 }
 

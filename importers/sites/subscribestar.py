@@ -258,49 +258,56 @@ class SubscribeStarScraper(BaseScraper):
                 if not pid:
                     continue
 
-                star = raw.get("star") or {}
-                creator_name = star.get("name") or raw.get("star_name") or ""
-                creator_ext_id = str(star.get("id") or star.get("star_id") or creator or "")
-                title = raw.get("title") or ""
-                content = raw.get("html") or raw.get("content") or ""
-                published_at = raw.get("created_at") or raw.get("published_at")
+                try:
+                    star = raw.get("star") or {}
+                    creator_name = star.get("name") or raw.get("star_name") or ""
+                    creator_ext_id = str(star.get("id") or star.get("star_id") or creator or "")
+                    title = raw.get("title") or ""
+                    content = raw.get("html") or raw.get("content") or ""
+                    published_at = raw.get("created_at") or raw.get("published_at")
 
-                attachments: list[ScrapedAttachment] = []
-                # Media attached to the post
-                for media in raw.get("media") or []:
-                    url = media.get("url") or media.get("full_url") or media.get("preview")
-                    if url:
-                        att = await self._stream(url, headers, media.get("filename"))
-                        if att:
-                            att.data_type = _dtype(media.get("type") or url)
-                            attachments.append(att)
+                    attachments: list[ScrapedAttachment] = []
+                    # Media attached to the post
+                    for media in raw.get("media") or []:
+                        url = media.get("url") or media.get("full_url") or media.get("preview")
+                        if url:
+                            att = await self._stream(url, headers, media.get("filename"))
+                            if att:
+                                att.data_type = _dtype(media.get("type") or url)
+                                attachments.append(att)
 
-                # Comments
-                comments: list[ScrapedComment] = []
-                for c in raw.get("comments") or []:
-                    cid = str(c.get("id") or "")
-                    if cid:
-                        comments.append(
-                            ScrapedComment(
-                                external_id=cid,
-                                content=c.get("body") or c.get("content") or "",
-                                author_name=c.get("user", {}).get("name"),
-                                published_at=c.get("created_at"),
+                    # Comments
+                    comments: list[ScrapedComment] = []
+                    for c in raw.get("comments") or []:
+                        cid = str(c.get("id") or "")
+                        if cid:
+                            comments.append(
+                                ScrapedComment(
+                                    external_id=cid,
+                                    content=c.get("body") or c.get("content") or "",
+                                    author_name=c.get("user", {}).get("name"),
+                                    published_at=c.get("created_at"),
+                                )
                             )
-                        )
 
-                post = ScrapedPost(
-                    external_id=pid,
-                    creator_external_id=creator_ext_id,
-                    service_type="subscribestar",
-                    title=title,
-                    content=content or None,
-                    published_at=published_at,
-                    attachments=attachments,
-                    comments=comments,
-                    creator_name=creator_name or None,
-                )
-                all_posts.append(post)
+                    post = ScrapedPost(
+                        external_id=pid,
+                        creator_external_id=creator_ext_id,
+                        service_type="subscribestar",
+                        title=title,
+                        content=content or None,
+                        published_at=published_at,
+                        attachments=attachments,
+                        comments=comments,
+                        creator_name=creator_name or None,
+                    )
+                    all_posts.append(post)
+                except Exception as exc:
+                    self.logger.warning(
+                        "Failed to process SubscribeStar post — skipping",
+                        extra={"job_id": self.job_id, "post_id": pid, "error": str(exc)},
+                    )
+                    continue
 
                 progress = int((idx + 1) / total * 100)
                 if self.flush_callback and (idx + 1) % 5 == 0:

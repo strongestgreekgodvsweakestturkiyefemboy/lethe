@@ -50,15 +50,21 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
         return;
       }
 
+      // First ever account becomes admin automatically.
+      // userCount <= 1 accounts for the 'default' placeholder user that gets
+      // created as import-job owner when no userId is supplied.
+      const userCount = await prisma.user.count();
+      const isFirstUser = userCount <= 1;
+
       // Create new account
       const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
       const user = await prisma.user.create({
-        data: { username: cleanUsername, passwordHash: hash },
+        data: { username: cleanUsername, passwordHash: hash, isAdmin: isFirstUser },
       });
-      logger.info('New user created', { userId: user.id, username: cleanUsername });
+      logger.info('New user created', { userId: user.id, username: cleanUsername, isAdmin: isFirstUser });
 
-      const token = jwt.sign({ sub: user.id, username: user.username }, JWT_SECRET, { expiresIn: '30d' });
-      res.status(201).json({ token, user: { id: user.id, username: user.username, createdAt: user.createdAt } });
+      const token = jwt.sign({ sub: user.id, username: user.username, isAdmin: user.isAdmin }, JWT_SECRET, { expiresIn: '30d' });
+      res.status(201).json({ token, user: { id: user.id, username: user.username, isAdmin: user.isAdmin, createdAt: user.createdAt } });
       return;
     }
 
@@ -69,10 +75,71 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
       return;
     }
 
-    const token = jwt.sign({ sub: existing.id, username: existing.username }, JWT_SECRET, { expiresIn: '30d' });
-    res.json({ token, user: { id: existing.id, username: existing.username, createdAt: existing.createdAt } });
+    const token = jwt.sign({ sub: existing.id, username: existing.username, isAdmin: existing.isAdmin }, JWT_SECRET, { expiresIn: '30d' });
+    res.json({ token, user: { id: existing.id, username: existing.username, isAdmin: existing.isAdmin, createdAt: existing.createdAt } });
   } catch (err) {
     logger.error('login failed', { username: cleanUsername, error: (err as Error).message });
+    next(err);
+  }
+}
+
+/**
+ * PATCH /api/v1/auth/password
+ *
+ * Change the current user's password.
+ * Requires a valid Bearer JWT.
+ * Body: { currentPassword: string; newPassword: string }
+ */
+export async function changePassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const header = req.headers.authorization;
+  if (!header?.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Authentication required' });
+    return;
+  }
+
+  let userId: string;
+  try {
+    const payload = jwt.verify(header.slice(7), JWT_SECRET) as { sub: string };
+    userId = payload.sub;
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' });
+    return;
+  }
+
+  const { currentPassword, newPassword } = req.body as {
+    currentPassword?: string;
+    newPassword?: string;
+  };
+
+  if (!currentPassword || !newPassword) {
+    res.status(400).json({ error: 'currentPassword and newPassword are required' });
+    return;
+  }
+
+  if (newPassword.length < 8) {
+    res.status(400).json({ error: 'New password must be at least 8 characters' });
+    return;
+  }
+
+  try {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    const valid = user.passwordHash ? await bcrypt.compare(currentPassword, user.passwordHash) : false;
+    if (!valid) {
+      res.status(401).json({ error: 'Current password is incorrect' });
+      return;
+    }
+
+    const hash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await prisma.user.update({ where: { id: userId }, data: { passwordHash: hash } });
+    logger.info('Password changed', { userId });
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error('changePassword failed', { userId, error: (err as Error).message });
     next(err);
   }
 }
@@ -93,7 +160,7 @@ export async function me(req: Request, res: Response, next: NextFunction): Promi
     const payload = jwt.verify(header.slice(7), JWT_SECRET) as { sub: string; username: string };
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, username: true, createdAt: true },
+      select: { id: true, username: true, isAdmin: true, createdAt: true },
     });
     if (!user) {
       res.status(404).json({ error: 'User not found' });

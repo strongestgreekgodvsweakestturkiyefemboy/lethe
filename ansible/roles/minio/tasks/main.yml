@@ -2,12 +2,42 @@
 # roles/minio/tasks/main.yml
 # Installs MinIO server as a systemd service (no Docker required).
 
+#- name: Check if MinIO service is currently active
+#  ansible.builtin.systemd:
+#    name: minio
+#  register: minio_service_check
+#  become: true
+#
+#- name: Stop MinIO to prevent metadata locks during config
+#  ansible.builtin.service:
+#    name: minio
+#    state: stopped
+#  become: true
+#  when: minio_service_check.status.ActiveState == "active"
+#
+#- name: Clean up existing MinIO metadata (Cluster Reset)
+#  ansible.builtin.file:
+#    path: "{{ item }}"
+#    state: absent
+#  loop:
+#    - /var/lib/minio/data/.minio.sys
+#    - /var/lib/minio/data/.minio.sys.old
+#  become: true
+#  # Only wipe if we are troubleshooting or forcing a clean install
+#  tags: [never, minio_reset]
+
+
+# -e minio_reset=true
+- name: Reset MinIO cluster state 
+  ansible.builtin.import_tasks: reset.yml
+  when: minio_reset | default(false) | bool
+
 - name: Create minio system user
   ansible.builtin.user:
     name: minio-user
     system: true
     shell: /usr/sbin/nologin
-    create_home: false
+    create_home: true
   become: true
 
 - name: Create MinIO data directory
@@ -28,18 +58,16 @@
     mode: '0750'
   become: true
 
-- name: Check if MinIO binary exists
-  ansible.builtin.stat:
-    path: /usr/local/bin/minio
-  register: minio_binary
-
-- name: Download MinIO binary
+- name: Download MinIO binary (latest)
   ansible.builtin.get_url:
-    url: "https://dl.min.io/server/minio/release/linux-amd64/archive/minio.{{ minio_version }}"
+    url: "https://dl.min.io/server/minio/release/linux-amd64/minio"
     dest: /usr/local/bin/minio
     mode: '0755'
+    force: true
   become: true
-  when: not minio_binary.stat.exists
+  notify:
+    - Reload systemd
+    - Restart MinIO
 
 - name: Write MinIO environment config
   ansible.builtin.template:
@@ -64,6 +92,18 @@
 - name: Flush handlers
   ansible.builtin.meta: flush_handlers
 
+- name: Ensure MinIO directories are owned by minio-user
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: minio-user
+    group: minio-user
+    recurse: true
+  loop:
+    - /var/lib/minio
+    - /etc/minio
+  become: true
+
 - name: Ensure MinIO service is started and enabled
   ansible.builtin.service:
     name: minio
@@ -71,27 +111,44 @@
     enabled: true
   become: true
 
+
 - name: Wait for MinIO API to be ready
   ansible.builtin.wait_for:
     host: "{{ minio_host }}"
     port: "{{ minio_port }}"
     timeout: 30
 
-- name: Install MinIO client (mc)
+- name: Download MinIO client (mc, latest)
   ansible.builtin.get_url:
     url: "https://dl.min.io/client/mc/release/linux-amd64/mc"
     dest: /usr/local/bin/mc
     mode: '0755'
   become: true
 
+- name: Wait for MinIO cluster to reach quorum
+  ansible.builtin.uri:
+    url: "http://localhost:9000/minio/health/cluster" # <--- Use /cluster not just /live
+    status_code: 200
+  register: cluster_health
+  until: cluster_health.status == 200
+  retries: 60        # Give it 5 full minutes
+  delay: 5
+
 - name: Configure mc alias for local MinIO
   ansible.builtin.command: >
     mc alias set local
-    http://{{ minio_host }}:{{ minio_port }}
+    http://localhost:{{ minio_port }}
     {{ minio_access_key }}
     {{ minio_secret_key }}
+  register: mc_result
+  until: mc_result.rc == 0
+  retries: 5
+  delay: 5
   changed_when: false
+  run_once: true     # Cluster config only needs to happen once
+  become: false      #
 
 - name: Create lethe-imports bucket
   ansible.builtin.command: mc mb --ignore-existing local/{{ minio_bucket }}
   changed_when: false
+  run_once: true  # <--- Prevents race conditions during bucket creation

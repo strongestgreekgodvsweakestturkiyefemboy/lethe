@@ -1,0 +1,48 @@
+---
+# roles/keepalived/tasks/main.yml
+# Installs Keepalived for VRRP-based virtual IP failover of HAProxy.
+# The first host in [lb] becomes MASTER; remaining hosts are BACKUP.
+
+- name: Fail if keepalived_auth_pass is still the placeholder value
+  ansible.builtin.fail:
+    msg: >
+      keepalived_auth_pass must be changed from the default placeholder.
+      Set it to a short random string (max 8 chars) in group_vars/all.yml.
+  when: keepalived_auth_pass == "CHANGE_ME"
+
+- name: Install Keepalived (Debian)
+  ansible.builtin.apt:
+    name: keepalived
+    state: present
+  become: true
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Install Keepalived (Arch)
+  community.general.pacman:
+    name: keepalived
+    state: present
+  become: true
+  when: ansible_facts['os_family'] == "Archlinux"
+
+- name: Determine VRRP role and priority for this host
+  ansible.builtin.set_fact:
+    keepalived_state: "{{ 'MASTER' if inventory_hostname == groups['lb'][0] else 'BACKUP' }}"
+    keepalived_priority: "{{ 110 - (groups['lb'].index(inventory_hostname) * 10) }}"
+
+- name: Write Keepalived configuration
+  ansible.builtin.template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+    mode: '0600'
+  become: true
+  notify: Restart Keepalived
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure Keepalived is started and enabled
+  ansible.builtin.service:
+    name: keepalived
+    state: started
+    enabled: true
+  become: true

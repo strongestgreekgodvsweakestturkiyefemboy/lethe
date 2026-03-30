@@ -1,0 +1,74 @@
+---
+# ansible/minimal.yml
+# Minimal single-server deployment: Postgres, Redis, MinIO, backend, importers, frontend.
+# No load balancing, caching proxy, or monitoring stack.
+#
+# Run: ansible-playbook -i inventory/hosts.ini minimal.yml
+#
+# All hosts should be in the [app] group (or set to the same server).
+# The [db], [cache], [storage] groups can point to the same host as [app]
+# for a single-server setup.
+
+# ── Pre-flight check ─────────────────────────────────────────
+- name: Verify prerequisites
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Verify group_vars/all.yml exists
+      ansible.builtin.stat:
+        path: "{{ playbook_dir }}/group_vars/all.yml"
+      register: gvars
+
+    - name: Fail if group_vars/all.yml is missing
+      ansible.builtin.fail:
+        msg: >
+          Please copy ansible/group_vars/all.yml.example to ansible/group_vars/all.yml
+          and fill in your secrets before running this playbook.
+      when: not gvars.stat.exists
+
+# ── Common bootstrap ──────────────────────────────────────────
+- name: Bootstrap all hosts
+  hosts: lethe
+  gather_facts: true
+  roles:
+    - role: common
+
+# ── Data tier ─────────────────────────────────────────────────
+- name: Provision PostgreSQL
+  hosts: db
+  gather_facts: true
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+  roles:
+    - role: postgres
+
+- name: Provision Redis
+  hosts: cache
+  gather_facts: true
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+  roles:
+    - role: redis
+
+- name: Provision MinIO
+  hosts: storage
+  gather_facts: true
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+  roles:
+    - role: minio
+
+# ── Application tier ──────────────────────────────────────────
+- name: Deploy application services
+  hosts: app
+  gather_facts: true
+  pre_tasks:
+    - name: Resolve service host addresses
+      ansible.builtin.include_tasks: tasks/set_service_hosts.yml
+  roles:
+    - role: backend
+    - role: importers
+    - role: frontend

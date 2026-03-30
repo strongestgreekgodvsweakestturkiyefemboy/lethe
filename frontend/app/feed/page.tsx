@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/components/AuthContext';
 
-const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001';
+const BACKEND = '';
 
 interface FeedPost {
   id: string;
@@ -48,7 +48,7 @@ export default function FeedPage() {
 
   if (!user) {
     return (
-      <main className="min-h-[calc(100vh-3rem)] bg-gray-950 text-white flex items-center justify-center p-6">
+      <main className="min-h-[calc(100vh-3rem)] user-bg flex items-center justify-center p-6">
         <div className="text-center">
           <h1 className="text-2xl font-bold mb-4">Your Feed</h1>
           <p className="text-gray-400 mb-6">Sign in to see posts from your favourite artists.</p>
@@ -59,7 +59,7 @@ export default function FeedPage() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-3rem)] bg-gray-950 text-white p-6">
+    <main className="min-h-[calc(100vh-3rem)] user-bg p-6">
       <div className="max-w-2xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Your Feed</h1>
@@ -83,7 +83,7 @@ export default function FeedPage() {
               const preview = rev?.content ? stripHtml(rev.content) : '';
               const postHref = `/${post.creator.serviceType}/user/${post.creator.externalId}`;
               return (
-                <article key={post.id} className="bg-gray-900 rounded-xl p-5 hover:bg-gray-800/80 transition-colors">
+                <article key={post.id} className="user-card rounded-xl p-5">
                   <div className="flex items-center gap-2 mb-2">
                     <Link href={postHref} className="text-sm font-medium text-indigo-400 hover:text-indigo-300">
                       {post.creator.name ?? post.creator.externalId}
@@ -112,7 +112,7 @@ export default function FeedPage() {
           <div className="text-center mt-6">
             <button
               onClick={() => loadPosts(nextCursor)}
-              className="border border-gray-700 hover:bg-gray-800 px-6 py-2 rounded-lg text-sm transition-colors"
+              className="user-card border px-6 py-2 rounded-lg text-sm" style={{ borderColor: 'var(--user-border-color)' }}
             >
               Load more
             </button>

@@ -248,58 +248,7 @@ variables for local development.
 
 ---
 
-## API Reference
 
-### Public endpoints (port 3001)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/api/v1/imports/start` | — | Start a site import job |
-| `GET` | `/api/v1/imports/:jobId/stream` | — | SSE progress stream for a job |
-| `POST` | `/api/v1/imports/peer` | — | Import from another Lethe node |
-| `GET` | `/api/v1/export/items` | `x-api-key` header | Export `DataItem`s to peer nodes |
-| `GET` | `/api/v1/items` | — | List archived items |
-| `GET` | `/api/v1/files/presign` | — | Generate a presigned S3 download URL |
-| `GET` | `/api/v1/creators` | — | List creators |
-| `GET` | `/api/v1/creators/:creatorId/posts` | — | List posts for a creator |
-| `GET` | `/api/v1/posts/:postId` | — | Get a single post |
-| `GET` | `/healthz` | — | Health check — returns `{ "status": "ok" }` |
-
-### Internal endpoint (not exposed publicly)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/api/internal/jobs/:jobId/update` | `x-internal-secret` header | Worker → backend job-status webhook |
-
-### Export API response shape
-
-```jsonc
-{
-  "items": [
-    {
-      "id": "clxxx",
-      "sourceSite": "site_a",
-      "dataType": "TEXT",       // TEXT | IMAGE | VIDEO | AUDIO
-      "content": "…",           // for TEXT items
-      "fileUrl": "imports/…",   // S3 key for media items
-      "createdAt": "2026-01-01T00:00:00Z"
-    }
-  ],
-  "nextCursor": "clyyy"         // null when no more pages
-}
-```
-
-### Peer import request body
-
-```jsonc
-{
-  "peerUrl": "https://other-lethe.example.com",
-  "apiKey": "<export API key of the peer>",
-  "userId": "<local userId to attach imported items to>"
-}
-```
-
----
 
 ## Project Structure
 
@@ -332,35 +281,6 @@ variables for local development.
     ├── app/
     └── components/
 ```
-
----
-
-## Adding a New Site Importer
-
-1. Create `importers/sites/<name>.py` and subclass `BaseScraper`:
-
-   ```python
-   from __future__ import annotations
-   from core.base_scraper import BaseScraper
-
-   class MySiteScraper(BaseScraper):
-       async def run(self) -> None:
-           # fetch and stream content using self.stream_url_to_s3(...)
-           ...
-   ```
-
-2. Register the scraper in `SCRAPER_REGISTRY` inside `importers/main.py`:
-
-   ```python
-   from sites.my_site import MySiteScraper
-
-   SCRAPER_REGISTRY: dict[str, type[BaseScraper]] = {
-       "site_a": SiteAScraper,
-       "my_site": MySiteScraper,   # ← add this
-   }
-   ```
-
-3. Restart the worker process (or re-run the Ansible deploy playbook).
 
 ---
 

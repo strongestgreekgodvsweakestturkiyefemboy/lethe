@@ -315,33 +315,40 @@ class FanboxScraper(BaseScraper):
                 if not pid:
                     continue
 
-                detail = await self._post_detail(client, pid, headers)
-                if detail:
-                    raw = {**raw, **detail}
+                try:
+                    detail = await self._post_detail(client, pid, headers)
+                    if detail:
+                        raw = {**raw, **detail}
 
-                user = raw.get("user") or creator_info.get("user") or {}
-                creator_ext_id = str(
-                    user.get("userId") or raw.get("creatorId") or ""
-                )
-                title = raw.get("title") or ""
-                published_at = raw.get("publishedDatetime")
-                creator_name = user.get("name") or creator_info.get("user", {}).get("name")
-                thumb = user.get("iconUrl") or creator_info.get("user", {}).get("iconUrl")
+                    user = raw.get("user") or creator_info.get("user") or {}
+                    creator_ext_id = str(
+                        user.get("userId") or raw.get("creatorId") or ""
+                    )
+                    title = raw.get("title") or ""
+                    published_at = raw.get("publishedDatetime")
+                    creator_name = user.get("name") or creator_info.get("user", {}).get("name")
+                    thumb = user.get("iconUrl") or creator_info.get("user", {}).get("iconUrl")
 
-                attachments, content_html = await self._extract_attachments(raw, headers)
+                    attachments, content_html = await self._extract_attachments(raw, headers)
 
-                post = ScrapedPost(
-                    external_id=pid,
-                    creator_external_id=creator_ext_id,
-                    service_type="fanbox",
-                    title=title,
-                    content=content_html or None,
-                    published_at=published_at,
-                    attachments=attachments,
-                    creator_name=creator_name,
-                    creator_thumbnail_url=thumb,
-                )
-                all_posts.append(post)
+                    post = ScrapedPost(
+                        external_id=pid,
+                        creator_external_id=creator_ext_id,
+                        service_type="fanbox",
+                        title=title,
+                        content=content_html or None,
+                        published_at=published_at,
+                        attachments=attachments,
+                        creator_name=creator_name,
+                        creator_thumbnail_url=thumb,
+                    )
+                    all_posts.append(post)
+                except Exception as exc:
+                    self.logger.warning(
+                        "Failed to process Fanbox post — skipping",
+                        extra={"job_id": self.job_id, "post_id": pid, "error": str(exc)},
+                    )
+                    continue
 
                 progress = int((idx + 1) / total * 100)
                 if self.flush_callback and (idx + 1) % 5 == 0:

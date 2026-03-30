@@ -2,16 +2,16 @@
 
 import { useEffect, useState, useCallback } from 'react';
 
-const BACKEND_URL =
-  typeof window !== 'undefined'
-    ? (process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001')
-    : 'http://localhost:3001';
+const BACKEND_URL = '';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface MessageRevision {
-  title: string | null;
-  content: string | null;
+interface DiscordAuthor {
+  id: string;
+  discordId: string;
+  username: string | null;
+  globalName: string | null;
+  avatarUrl: string | null;
 }
 
 interface MessageAttachment {
@@ -19,26 +19,24 @@ interface MessageAttachment {
   fileUrl: string;
   dataType: 'IMAGE' | 'VIDEO' | 'AUDIO' | 'FILE';
   name: string | null;
+  originalUrl: string | null;
 }
 
-interface MessageReply {
-  id: string;
-  externalId: string;
-  authorName: string | null;
-  publishedAt: string | null;
-  revisions: { content: string }[];
+interface MessageRevision {
+  content: string | null;
+  editedAt: string | null;
 }
 
 interface DiscordMessage {
   id: string;
-  externalId: string;
+  messageId: string;
+  content: string | null;
   publishedAt: string | null;
   createdAt: string;
-  revisions: MessageRevision[];
+  author: DiscordAuthor | null;
   attachments: MessageAttachment[];
-  comments: MessageReply[];
-  creator: { serviceType: string; externalId: string; name: string | null };
-  _count: { attachments: number; comments: number };
+  revisions: MessageRevision[];
+  _count: { attachments: number; revisions: number };
 }
 
 // ── Presign helpers ────────────────────────────────────────────────────────────
@@ -116,32 +114,17 @@ function MessageAttachmentView({ att }: { att: MessageAttachment }) {
   );
 }
 
-// ── Reply quote ────────────────────────────────────────────────────────────────
-
-function ReplyQuote({ reply }: { reply: MessageReply }) {
-  const content = reply.revisions[0]?.content ?? '';
-  const preview = content.length > 120 ? content.slice(0, 120) + '…' : content;
-  return (
-    <div className="flex items-start gap-2 mb-1.5">
-      <div className="w-0.5 shrink-0 self-stretch rounded-full bg-gray-500" />
-      <div className="text-xs text-gray-400 leading-relaxed min-w-0">
-        {reply.authorName && (
-          <span className="font-semibold text-gray-300 mr-1">{reply.authorName}</span>
-        )}
-        <span className="line-clamp-2 break-words">{preview || '(attachment)'}</span>
-      </div>
-    </div>
-  );
-}
-
 // ── Single message bubble ──────────────────────────────────────────────────────
 
 function MessageBubble({ msg, prevMsg }: { msg: DiscordMessage; prevMsg: DiscordMessage | null }) {
-  const content = msg.revisions[0]?.content ?? '';
+  const content = msg.revisions[0]?.content ?? msg.content ?? '';
+  const author = msg.author;
+  const authorName = author?.globalName ?? author?.username ?? 'Unknown User';
   const ts = msg.publishedAt ? new Date(msg.publishedAt) : new Date(msg.createdAt);
 
-  // Group consecutive messages from same "creator" (channel) — they all share the same creator,
-  // so for Discord we group by proximity in time instead (within 7 minutes)
+  // Group consecutive messages from the same author within 7 minutes (Discord-style)
+  const prevAuthor = prevMsg?.author;
+  const prevAuthorName = prevAuthor?.globalName ?? prevAuthor?.username ?? 'Unknown User';
   const prevTs = prevMsg?.publishedAt
     ? new Date(prevMsg.publishedAt)
     : prevMsg
@@ -151,9 +134,9 @@ function MessageBubble({ msg, prevMsg }: { msg: DiscordMessage; prevMsg: Discord
     prevMsg !== null &&
     prevTs !== null &&
     ts.getTime() - prevTs.getTime() < 7 * 60 * 1000 &&
-    (msg.comments ?? []).length === 0;
+    authorName === prevAuthorName;
 
-  const initial = (msg.creator.name ?? msg.creator.externalId)[0]?.toUpperCase() ?? '#';
+  const initial = authorName[0]?.toUpperCase() ?? '#';
 
   return (
     <div className={`flex items-start gap-3 px-4 group hover:bg-white/5 rounded py-0.5 ${isGrouped ? '' : 'mt-4'}`}>
@@ -163,6 +146,13 @@ function MessageBubble({ msg, prevMsg }: { msg: DiscordMessage; prevMsg: Discord
           <span className="text-[10px] text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity leading-5 select-none">
             {ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
+        ) : author?.avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={author.avatarUrl}
+            alt={authorName}
+            className="w-10 h-10 rounded-full object-cover"
+          />
         ) : (
           <div className="w-10 h-10 rounded-full bg-indigo-700 flex items-center justify-center text-white font-bold text-sm select-none">
             {initial}
@@ -175,20 +165,17 @@ function MessageBubble({ msg, prevMsg }: { msg: DiscordMessage; prevMsg: Discord
         {!isGrouped && (
           <div className="flex items-baseline gap-2 mb-0.5">
             <span className="font-semibold text-white text-sm">
-              {msg.creator.name ?? `#${msg.creator.externalId}`}
+              {authorName}
             </span>
+            {author?.username && author.globalName && (
+              <span className="text-xs text-gray-500">@{author.username}</span>
+            )}
             <span className="text-xs text-gray-500">
               {ts.toLocaleDateString()} {ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
-          </div>
-        )}
-
-        {/* Reply quote */}
-        {(msg.comments ?? []).length > 0 && (
-          <div className="mb-1">
-            {(msg.comments ?? []).map((r) => (
-              <ReplyQuote key={r.id} reply={r} />
-            ))}
+            {msg.revisions.length > 1 && (
+              <span className="text-[10px] text-gray-600 italic">(edited)</span>
+            )}
           </div>
         )}
 
@@ -215,14 +202,16 @@ function MessageBubble({ msg, prevMsg }: { msg: DiscordMessage; prevMsg: Discord
 // ── Main component ─────────────────────────────────────────────────────────────
 
 interface Props {
-  creatorId: string;
+  /** Internal DB id of the DiscordServer record. */
+  serverId: string;
+  /** Discord channel snowflake (channelId field on DiscordChannel). */
   channelId: string;
   channelName: string | null;
 }
 
-export default function DiscordChannelView({ creatorId, channelId, channelName }: Props) {
+export default function DiscordChannelView({ serverId, channelId, channelName }: Props) {
   const [messages, setMessages] = useState<DiscordMessage[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -232,27 +221,23 @@ export default function DiscordChannelView({ creatorId, channelId, channelName }
       setLoading(true);
       setError(null);
       try {
-        const params = new URLSearchParams({ limit: '100' });
-        if (cursorValue) params.set('cursor', cursorValue);
+        const params = new URLSearchParams({ limit: '50' });
+        if (cursorValue) params.set('before', cursorValue);
 
         const res = await fetch(
-          `${BACKEND_URL}/api/v1/creators/${creatorId}/posts?${params.toString()}`,
+          `${BACKEND_URL}/api/v1/discord/servers/${serverId}/channels/${channelId}/messages?${params.toString()}`,
         );
         if (!res.ok) throw new Error(`Server error: ${res.status}`);
         const data = (await res.json()) as {
-          posts: DiscordMessage[];
+          messages: DiscordMessage[];
           nextCursor: string | null;
         };
 
-        // Sort oldest-first for chat display
-        const sorted = [...data.posts].sort((a, b) => {
-          const ta = a.publishedAt ? new Date(a.publishedAt).getTime() : new Date(a.createdAt).getTime();
-          const tb = b.publishedAt ? new Date(b.publishedAt).getTime() : new Date(b.createdAt).getTime();
-          return ta - tb;
-        });
+        // Sort oldest-first for chat display (API returns newest-first)
+        const sorted = [...data.messages].reverse();
 
-        setMessages((prev) => (replace ? sorted : [...prev, ...sorted]));
-        setCursor(data.nextCursor);
+        setMessages((prev) => (replace ? sorted : [...sorted, ...prev]));
+        setNextCursor(data.nextCursor);
         setHasMore(data.nextCursor !== null);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
@@ -260,12 +245,12 @@ export default function DiscordChannelView({ creatorId, channelId, channelName }
         setLoading(false);
       }
     },
-    [creatorId],
+    [serverId, channelId],
   );
 
   useEffect(() => {
     setMessages([]);
-    setCursor(null);
+    setNextCursor(null);
     loadPage(null, true);
   }, [loadPage]);
 
@@ -285,7 +270,7 @@ export default function DiscordChannelView({ creatorId, channelId, channelName }
         {hasMore && !loading && (
           <div className="flex justify-center pb-4">
             <button
-              onClick={() => loadPage(cursor, false)}
+              onClick={() => loadPage(nextCursor, false)}
               className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
             >
               Load older messages

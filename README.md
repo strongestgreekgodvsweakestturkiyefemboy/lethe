@@ -1,8 +1,3 @@
-# Disclaimer
-
-Status: Archived / Proof of Concept
-This repository is a technical demonstration of microservices-based data portability. It is provided for educational and research purposes only. The author does not maintain this software and is not responsible for its use. Users are responsible for ensuring their use of this tool complies with the Terms of Service of any third-party providers.
-
 # Lethe
 
 Lethe is an open-source, self-hostable framework for **personal data sovereignty and archival**.
@@ -13,15 +8,17 @@ their own digital history directly to private object storage (S3/MinIO). Lethe f
 interoperability through a Peer API, allowing users to manage their data across independent nodes
 they control.
 
-## Note
+## Notes
 
-I've kinda lost interest in the project so I won't be adding things to it.
+
+Kinda lost interest in the project, but do open issues. I might fix them. Licence wise I don't care. Claim its yours, make money off it. idgaf
 
 Kemono, Patreon and Discord importers work well. There a tag system too, but it's not actually wired up to anything useful (search, filters etc.)
 
 First user created on website will be admin account.
 
 I have tested Ansible deployment only on Arch servers and only the "site.yml" playbook. Large chance that minimal.yml won't work out of the box.
+Ansible playbook doesn't currently make services auto start on reboot etc. too, so that would need to be fixed.
 
 Required roles for minimal setup:
   * common
@@ -33,6 +30,8 @@ Required roles for minimal setup:
   * minio
   * postgres
 
+
+
 All requests are routed through caching proxy (nginx). 
 
 ## Prerequisites
@@ -40,13 +39,11 @@ All requests are routed through caching proxy (nginx).
 | Requirement | Version |
 |-------------|---------|
 | Ansible | ≥ 2.14 |
-| A target Linux server | Ubuntu 22.04+ recommended |
+| A target Linux server | Arch 22.04+ recommended |
 | SSH access to the target server | — |
 
 The Ansible playbooks install every other dependency (Node.js, Python, pm2, PostgreSQL, Redis,
 MinIO) on the target host automatically.
-
-
 
 
 
